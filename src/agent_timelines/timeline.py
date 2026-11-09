@@ -1,6 +1,6 @@
 """Turn one Claude Code session (main transcript, subagent transcripts, Workflow runs) into the data the viewer draws,
 and write it as <out_dir>/<sid>.data.js next to the shared index.html and index.data.js (live sessions only)."""
-import glob, json, os, re, sys, tempfile, time
+import filecmp, glob, json, os, re, shutil, sys, tempfile, time
 from datetime import datetime, timezone
 
 CLAUDE_DIR = os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
@@ -17,6 +17,7 @@ RETAIN_DAYS = 30
 WEIGHTS = {"in": 1, "cc": 1.25, "cr": 0.1, "out": 5}  # cost per token, input = 1
 STALE = 600  # s: an unfinished agent whose transcript is idle this long is dead, not running
 LIVE_AGE = 3600  # s: a session with no activity this long is ended
+ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js")  # sprites + font (assets/LICENSES.txt) + map view scripts
 CONFIG = os.path.expanduser(os.environ.get("AGENT_TIMELINES_CONFIG") or "~/.config/agent-timelines/config.json")
 KEYS = {"out_dir": "OUT_DIR", "agents_dir": "AGENTS_DIR", "handover_dir": "HANDOVER_DIR", "tiers": "TIERS", "guard_text": "DENY",
         "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS"}
@@ -232,8 +233,8 @@ def agent(aid, m, s, first, wf, age, inp, now, closed, ended):
             "ran": ran(model, effort, actual, actual_effort), "fam": family(actual or model), "running": running,
             "start": s["t0"] or (now if running else None), "end": now if running else s["t1"], "tools": s["tools"],
             "tokens": weighted(tok), "tok": tok, "peak": s["peak"], "brief": len(prompt), "flags": flags, "handoff": handoff, "cont": None,
-            "limit": limit[1] if limit else None, "exempt": exempt, "prompt": prompt[:400], "phase": str(m.get("workflowPhase") or "")[:40] if wf else "",
-            "_s": s, "_age": age, "_limit_t": limit[0] if limit else None, "_owner": m.get("toolUseId"), "_full_prompt": prompt}
+            "limit": limit[1] if limit else None, "exempt": exempt, "prompt": prompt, "phase": str(m.get("workflowPhase") or "")[:40] if wf else "",
+            "_s": s, "_age": age, "_limit_t": limit[0] if limit else None, "_owner": m.get("toolUseId")}
 
 
 def workflow(rid, w, kids, base, now, ended, errors):
@@ -303,7 +304,7 @@ def load(path, now=None, closed=(), ended=False, event=None):
     handoffs = {a["handoff"]: a["id"] for a in agents if a["handoff"]}
     for a in agents:
         a["parent"] = a["parent"] or owner.get(a["_owner"])
-        c = CONT_RE.search(a["_full_prompt"])
+        c = CONT_RE.search(a["prompt"])
         if c:
             a["cont"] = handoffs.get(os.path.expanduser(c.group(1).rstrip("`;,)'\".")))
         if a["parent"] is None:
@@ -391,16 +392,40 @@ def read_data(path):
         return None
 
 
+INFO_FLAGS = ("handoff", "tool-limit", "auto-filled", "frontmatter")  # shown as info, not counted as issues (ctx-* too)
+
+
+def summary(d, now):
+    """One lobby row: what the front page shows for a session, small so the index stays light whatever the prompts."""
+    ags = d.get("agents") or []
+    heroes = [a for a in ags if a.get("kind") != "wf"]
+    live = d.get("status") == "live" and now - d["updated"] < LIVE_AGE
+    den = d.get("denials") or 0
+    return {"id": d.get("id"), "cwd": d.get("cwd"), "live": live, "updated": d["updated"], "planner": d.get("planner"),
+            "heroes": len(heroes), "running": sum(bool(a.get("running")) for a in heroes) if live else 0, "workflows": len(ags) - len(heroes),
+            "gold": sum((d.get("models") or {}).values()),
+            "issues": sum(f not in INFO_FLAGS and not f.startswith("ctx-") for a in ags for f in a.get("flags") or []) + (len(den) if isinstance(den, list) else den),
+            "party": [[a.get("tier"), a.get("kind"), bool(a.get("running")) and live, "ignored-limit" in (a.get("flags") or [])] for a in ags[:12]],
+            "last": ((d.get("events") or [{}])[-1] or {}).get("text", "")}
+
+
 def build_index(out_dir=None, now=None):
-    """index.html (the viewer) and index.data.js (live sessions in full, newest first), from the <sid>.data.js files.
+    """index.html (the viewer) and index.data.js (lobby rows for the 30 most recent sessions, newest first), from the <sid>.data.js files.
     shortcut: no lock, concurrent hooks each rebuild from all data files and the last writer is at most one event behind; add an fcntl lock if it shows."""
     out_dir, now = out_dir or OUT_DIR, now or time.time()
     os.makedirs(out_dir, exist_ok=True)
-    side = [d for d in (read_data(p) for p in glob.glob(os.path.join(out_dir, "*.data.js")) if not p.endswith("index.data.js")) if d]
-    live = sorted((d for d in side if d.get("status") == "live" and now - d["updated"] < LIVE_AGE), key=lambda d: d["updated"], reverse=True)
-    write_atomic(os.path.join(out_dir, "index.data.js"), "TL(%s);\n" % js({"index": True, "now": now, "live": live}))
-    with open(os.path.join(os.path.dirname(__file__), "viewer.html"), encoding="utf-8") as f:
+    # "ctxLimit" marks the current data format: files from the pre-package script are skipped (agent-timelines rebuild redoes them)
+    side = [d for d in (read_data(p) for p in glob.glob(os.path.join(out_dir, "*.data.js")) if not p.endswith("index.data.js")) if d and "ctxLimit" in d]
+    rows = [summary(d, now) for d in sorted(side, key=lambda d: d["updated"], reverse=True)[:30]]
+    write_atomic(os.path.join(out_dir, "index.data.js"), "TL(%s);\n" % js({"index": True, "now": now, "sessions": rows}))
+    here = os.path.dirname(__file__)
+    with open(os.path.join(here, "viewer.html"), encoding="utf-8") as f:
         write_atomic(os.path.join(out_dir, "index.html"), f.read())
+    for name in ASSETS:  # copied only when the contents differ, not on every hook run
+        src, dst = os.path.join(here, name if name.endswith(".js") else os.path.join("assets", name)), os.path.join(out_dir, name)
+        if not os.path.exists(dst) or not filecmp.cmp(src, dst, shallow=False):
+            shutil.copyfile(src, dst + ".%d.tmp" % os.getpid())  # per-process temp: hooks run concurrently
+            os.replace(dst + ".%d.tmp" % os.getpid(), dst)
 
 
 def purge(out_dir, keep, now=None):

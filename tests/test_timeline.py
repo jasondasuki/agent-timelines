@@ -86,20 +86,28 @@ def test_tree_flags_running_and_files():
     assert "<script>x</script>" in by(jd)["D"]["desc"] and jd["closed"] == [] and jd["updated"] == s["updated"]
     html = open(os.path.join(od, "index.html")).read()
     assert "innerHTML" not in html and "index.data.js" in html
-    side = lambda sid, **k: tl.write_atomic(os.path.join(od, sid + ".data.js"), "TL(%s);\n" % tl.js(dict({"id": sid, "status": "live", "updated": now - 5, "agents": []}, **k)))
-    side("sess1", updated=now - 10)
+    side = lambda sid, **k: tl.write_atomic(os.path.join(od, sid + ".data.js"), "TL(%s);\n" % tl.js(dict({"id": sid, "status": "live", "updated": now - 5, "agents": [], "ctxLimit": 1}, **k)))
+    tl.write_atomic(os.path.join(od, "sess1.data.js"), "TL(%s);\n" % tl.js(dict(s, updated=now - 10)))  # full data, still live
     side("liveB")
     side("endA", status="ended", updated=now - 100)
     side("staleC", updated=now - tl.LIVE_AGE - 1)
+    tl.write_atomic(os.path.join(od, "oldD.data.js"), 'TL({"id": "oldD", "status": "live", "updated": %d, "agents": []});\n' % now)  # pre-package format
     open(os.path.join(od, "bad.data.js"), "w").write("TL({not json);\n")
     tl.build_index(od, now)
-    assert [x["id"] for x in unwrap(os.path.join(od, "index.data.js"))["live"]] == ["liveB", "sess1"], "live only, newest first"
+    rows = unwrap(os.path.join(od, "index.data.js"))["sessions"]
+    assert [x["id"] for x in rows] == ["liveB", "sess1", "endA", "staleC"], "every readable session, newest first"
+    assert [x["live"] for x in rows] == [True, True, False, False], "ended and stale sessions are not live"
+    r1 = rows[1]
+    want = sum(f not in tl.INFO_FLAGS and not f.startswith("ctx-") for a in s["agents"] for f in a["flags"]) + s["denials"]
+    assert r1["heroes"] == 6 and r1["running"] == 2 and r1["issues"] == want == 13 and r1["gold"] == sum(s["models"].values()) and len(r1["party"]) == 6, r1
+    assert r1["party"][3] == ["executor", None, True, False] and r1["last"] == s["events"][-1]["text"]
+    assert "prompt" not in json.dumps(rows) and "<\\/" not in json.dumps(rows), "lobby rows carry no prompt text"
     for f in ("old.data.js", "ancient.html"):
         open(os.path.join(od, f), "w").write("x")
         os.utime(os.path.join(od, f), (1, 1))
     os.utime(os.path.join(od, "liveB.data.js"), (1, 1))
     tl.purge(od, "liveB", now)
-    assert sorted(os.listdir(od)) == ["bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "staleC.data.js"]
+    assert sorted(os.listdir(od)) == sorted(tl.ASSETS + ("bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "staleC.data.js", "oldD.data.js"))
     # SubagentHandback ends an agent; a later assistant line resumes it; SubagentStop/Start keep the closed list
     hb = [use("g1", "Read", {}, 10), use("hb1", "SubagentHandback", {"message": "x"}, 20),
           {"type": "user", "timestamp": T(21), "message": {"content": [{"type": "tool_result", "tool_use_id": "hb1", "content": "Report delivered."}]}}]
@@ -127,7 +135,7 @@ def test_limits_tokens_tiers():
     p = session(pd, "sess4", [spawn("q1", "general-purpose", 0, **FULL), spawn("q2", "general-purpose", 1, **FULL), spawn("q3", "general-purpose", 2, **FULL),
                               spawn("q4", "writer", 3, **FULL), spawn("q5", "general-purpose", 4), spawn("q6", "general-purpose", 5, **FULL),
                               spawn("q7", "general-purpose", 400, prompt="Continue from the handoff in %s/2026-01-01-H3.md; read it first." % tl.HANDOVER_DIR, **FULL)], [
-        ("H1", meta("q1"), work("H1", 52, [att(60), att(60, "hook_success"), att(60, text="PONYTAIL MODE ACTIVE")])),  # ignored the limit
+        ("H1", meta("q1"), work("H1", 52, [att(60), att(60, "hook_success"), att(60, text="SOME OTHER HOOK OUTPUT")])),  # ignored the limit
         ("H2", meta("q2"), work("H2", 51, [att(60)])),  # handoff file, nobody continues
         ("H3", meta("q3"), work("H3", 51, [att(60)])),  # handoff file, K continues
         ("W", meta("q4", agentType="writer"), work("W", 51, [att(60)])),  # writers are exempt
@@ -142,7 +150,7 @@ def test_limits_tokens_tiers():
     turn = lambda i, model, **u: {"type": "assistant", "timestamp": T(10), "effort": "high", "message": {"id": i, "stop_reason": "end_turn", "model": model, "usage": u, "content": []}}
     refusal = {"type": "user", "timestamp": T(3), "message": {"content": [{"type": "tool_result", "tool_use_id": "q0", "content": [{"type": "text", "text":
                "PreToolUse:Agent hook blocking error: Brief is 8001 chars (>8000): pass file paths"}]}]}}
-    p5 = session(pd, "sess5", [spawn("p1", "pinme", 0), spawn("p2", "runner", 1), spawn("p3", "Plan", 2, **FULL), spawn("p4", "general-purpose", 4, prompt="x" * 100, **FULL), refusal], [
+    p5 = session(pd, "sess5", [spawn("p1", "pinme", 0), spawn("p2", "runner", 1), spawn("p3", "Plan", 2, **FULL), spawn("p4", "general-purpose", 4, prompt="x" * 900, **FULL), refusal], [
         ("P1", meta("p1", agentType="pinme"), [turn("a", "claude-sonnet-5", input_tokens=5, cache_creation_input_tokens=20000, cache_read_input_tokens=210000, output_tokens=7)]),
         ("P2", meta("p2", agentType="runner"), [turn("b", "claude-haiku-5", input_tokens=100, cache_read_input_tokens=1000, output_tokens=10)]),
         ("P3", meta("p3", agentType="Plan"), [fin("c", 10, "claude-opus-5")]), ("P4", meta("p4"), [fin("d", 10, "claude-opus-5")])])
@@ -151,7 +159,7 @@ def test_limits_tokens_tiers():
     assert b["P1"]["flags"] == ["frontmatter", tl.CTX_FLAG] and b["P1"]["req"] == "sonnet/high" and b["P2"]["flags"] == ["frontmatter"]
     assert [b[i]["tier"] for i in ("P1", "P2", "P3", "P4")] == ["executor", "runner", "plan", "executor"]
     assert tl.pinned("../x") == {} and tl.pinned("nothing") == {}
-    assert b["P1"]["peak"] == 230005 and b["P1"]["tokens"] == 5 + 25000 + 21000 + 35 and b["P4"]["brief"] == 100
+    assert b["P1"]["peak"] == 230005 and b["P1"]["tokens"] == 5 + 25000 + 21000 + 35 and b["P4"]["brief"] == 900 and b["P4"]["prompt"] == "x" * 900
     assert s["modelTok"]["sonnet"]["cr"] == 210000 and sum(s["models"].values()) == s["tokens"] + sum(a["tokens"] for a in s["agents"])
     assert [e["text"] for e in s["events"] if e["k"] == "refused"] == ["brief refused: 8001 chars (>8000)"]
 

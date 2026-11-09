@@ -49,7 +49,7 @@ def install(a):
         strip(hooks)
         for ev, matcher in EVENTS.items():
             hooks.setdefault(ev, []).append(dict({"matcher": matcher} if matcher else {}, hooks=[{"type": "command", "command": cmd}]))
-    print("installed %d hooks in %s\nopen the dashboard: agent-timelines serve" % (len(EVENTS), edit_settings(a.settings, edit)))
+    print("installed %d hooks in %s\nfill the lobby with past sessions: agent-timelines rebuild\nopen the dashboard: agent-timelines serve" % (len(EVENTS), edit_settings(a.settings, edit)))
 
 
 def uninstall(a):
@@ -95,6 +95,20 @@ def open_(a):
     webbrowser.open("file://" + page)
 
 
+def rebuild(a):
+    """Regenerate data for every transcript touched in the last `days` (fills the lobby on a first install)."""
+    files = [f for f in tl.find() if time.time() - os.path.getmtime(f) < a.days * 86400]
+    for i, f in enumerate(files, 1):
+        try:
+            build(argparse.Namespace(transcript=f, event=None, closed=None, recheck=0))
+        except Exception as e:  # one unreadable transcript must not stop the rest
+            print("skipped %s: %s" % (os.path.basename(f), e))
+        if sys.stdout.isatty():  # a live counter in a terminal; captured output gets only the summary
+            print("\r%d/%d" % (i, len(files)), end="", flush=True)
+    print("\r" if sys.stdout.isatty() else "", end="")
+    print("rebuilt %d sessions into %s" % (len(files), tl.OUT_DIR))
+
+
 def list_(a):
     for p in tl.find()[:20]:
         n = len(glob.glob(os.path.join(p[:-6], "subagents", "*.meta.json")))
@@ -135,6 +149,9 @@ def main(argv=None):
     sp.add_argument("session", nargs="?")
     sp.set_defaults(fn=open_)
     sub.add_parser("list", help="list recent sessions").set_defaults(fn=list_)
+    sp = sub.add_parser("rebuild", help="regenerate data for recent sessions from their transcripts")
+    sp.add_argument("--days", type=float, default=tl.RETAIN_DAYS)
+    sp.set_defaults(fn=rebuild)
     sub.add_parser("hook", help="(called by Claude Code) handle one hook event from stdin").set_defaults(fn=hook)
     sp = sub.add_parser("build", help="(called by the hook) rebuild one session's data")
     sp.add_argument("transcript")
