@@ -1,5 +1,7 @@
 # agent-timelines
 
+[![CI](https://github.com/jasondasuki/agent-timelines/actions/workflows/ci.yml/badge.svg)](https://github.com/jasondasuki/agent-timelines/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A pixel-art dashboard for Claude Code sessions. It shows which agent spawned which, the model and effort
 requested vs. what actually ran, tool calls, weighted token cost, handoffs and Workflow runs, live while the
 session works. Everything is read from your local transcripts; nothing leaves your machine.
@@ -73,3 +75,7 @@ open dev/dungeon-demo.html                                     # dungeon playgro
 - Font: Press Start 2P by CodeMan38, SIL Open Font License 1.1.
 
 Details in `src/agent_timelines/assets/LICENSES.txt`.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Contributions welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).

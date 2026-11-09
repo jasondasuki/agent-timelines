@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Python tests
+        env:
+          AGENT_TIMELINES_CONFIG: /nonexistent
+        run: python tests/test_timeline.py && python tests/test_cli.py
+      - name: Map view tests
+        run: node tests/test_dungeon.js && node tests/test_actors.js
+      - name: Clean install
+        run: |
+          python -m pip install --quiet .
+          agent-timelines --help
+          python -c "import agent_timelines, os; d = os.path.dirname(agent_timelines.__file__); assert all(os.path.exists(os.path.join(d, f)) for f in ('viewer.html', 'dungeon.js', 'actors.js', 'assets/tiny-dungeon.png'))"
