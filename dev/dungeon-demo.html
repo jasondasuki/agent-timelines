@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>dungeon demo</title>
+<style>
+  body { margin: 0; background: #1b1b2a; color: #ddd; font: 14px monospace; }
+  #bar { padding: 8px; position: sticky; top: 0; background: #1b1b2a; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  input[type=number] { width: 4em; }
+  canvas { image-rendering: pixelated; display: block; }
+</style>
+<div id="bar">
+  <label>seed <input id="seed" value="demo-session"></label>
+  <label>agents <input id="na" type="number" min="0" max="60" value="10"></label>
+  <label>working <input id="nw" type="number" min="0" max="60" value="3"></label>
+  <span>finished <b id="nf"></b></span>
+  <button id="add">add agent</button>
+  <button id="reset">reset</button>
+</div>
+<canvas id="c"></canvas>
+<script src="../src/agent_timelines/dungeon.js"></script>
+<script src="../src/agent_timelines/actors.js"></script>
+<script>
+  // Controls apply live. The newest `working` agents are working (fighting); the rest are finished, so lowering
+  // `working` makes agents win. Roles (class, workflow, berserk, failed) are fixed per seed + index.
+  // URL: ?n=10&w=3&seed=... set the starting values, ?zoom shows only the guild hall at 4x, ?still freezes animation.
+  var q = new URLSearchParams(location.search), $ = function (id) { return document.getElementById(id); };
+  var cv = $('c'), nodes = [], d, bg, actors, mem = {}, shape = '', sheets = { td: new Image(), ob: new Image() }, pending = 2;
+  var TIERS = ['executor', 'executor', 'scanner', 'runner', 'plan', 'writer', 'other'];
+  var STILL = q.has('still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var DEF = { seed: q.get('seed') || 'demo-session', n: +(q.get('n') || 10), w: +(q.get('w') || 3) };
+  function num(el) { return Math.max(0, Math.min(+el.max, Math.floor(+el.value) || 0)); }
+
+  function role(i) { // deterministic per seed and index, so the same agent keeps its class across changes
+    var r = Dungeon.prng($('seed').value + '/sim/' + i), n = { id: 'a' + i, parent: nodes[(i * 2654435761 >>> 0) % i].id, tier: TIERS[r() * TIERS.length | 0], flags: [] };
+    if (r() < 0.1) n.kind = 'wf';
+    n.berserk = r() < 0.12; n.fails = r() < 0.3;
+    return n;
+  }
+  function sync() { // make nodes match the controls: grow or trim the list, then set who is working
+    var na = num($('na')), nw = Math.min(num($('nw')), na);
+    $('nw').value = nw; $('nf').textContent = na - nw;
+    if (!nodes.length) nodes = [{ id: 'main', parent: null, flags: [] }];
+    while (nodes.length > na + 1) nodes.pop();
+    while (nodes.length < na + 1) nodes.push(role(nodes.length));
+    nodes.forEach(function (n, i) {
+      if (!i) return;
+      n.running = i > na - nw;
+      n.flags = !n.running && n.berserk && n.kind !== 'wf' ? ['ignored-limit'] : [];
+      if (n.kind === 'wf') n.wf = { state: n.running ? 'running' : n.fails ? 'failed' : 'done' };
+    });
+    nodes[0].running = nw > 0;
+  }
+  function restart() { nodes = []; mem = {}; shape = ''; d = null; sync(); }
+  function reset() { $('seed').value = DEF.seed; $('na').value = DEF.n; $('nw').value = DEF.w; restart(); }
+
+  function scale() { return q.has('zoom') ? 4 : Math.max(1, Math.min(3, Math.floor(innerWidth / (d.w * 16)))); } // integer: crisp pixels
+  function frame(now) {
+    var key = $('seed').value + '|' + nodes.map(function (n) { return n.id + (n.running ? '*' : ''); }).join();
+    if (key !== shape) { // terrain only when the agent count changes; actors whenever any state changes
+      if (!d || d.rooms.length !== nodes.length) {
+        d = Dungeon.generate($('seed').value, nodes);
+        var s0 = scale(); bg = document.createElement('canvas'); bg.width = d.w * 16 * s0; bg.height = d.h * 16 * s0;
+        Dungeon.render(bg.getContext('2d'), d, sheets, s0);
+      }
+      actors = Actors.place($('seed').value, d, nodes); shape = key;
+    }
+    Actors.stamp(actors, mem, now);
+    var s = scale(), ctx = cv.getContext('2d'), hall = d.rooms[0];
+    if (q.has('zoom')) { cv.width = (hall.w + 4) * 64; cv.height = (hall.h + 5) * 64; ctx.translate(-(hall.x - 2 - d.ox) * 64, -(hall.y - 3 - d.oy) * 64); }
+    else if (cv.width !== bg.width || cv.height !== bg.height) { cv.width = bg.width; cv.height = bg.height; }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bg, 0, 0);
+    Actors.draw(ctx, d, actors, sheets, s, now, STILL);
+    requestAnimationFrame(frame);
+  }
+
+  $('na').oninput = $('nw').oninput = sync;
+  $('seed').oninput = restart;
+  $('add').onclick = function () { $('na').value = num($('na')) + 1; $('nw').value = num($('nw')) + 1; sync(); };
+  $('reset').onclick = reset;
+  sheets.td.onload = sheets.ob.onload = function () { if (!--pending) { reset(); requestAnimationFrame(frame); } };
+  sheets.td.src = '../src/agent_timelines/assets/tiny-dungeon.png';
+  sheets.ob.src = '../src/agent_timelines/assets/one-bit.png';
+</script>
