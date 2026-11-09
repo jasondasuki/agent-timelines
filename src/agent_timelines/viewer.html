@@ -1,0 +1,194 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent timelines</title><style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1c1f24;--mut:#5d6570;--line:#c9ced6;--card:#f5f7fa;--bad:#c62828;--badbg:#fdeaea;--run:#9a5b00;--ok:#3b6b55;
+--wf:#00838f;--opus:#7c4dff;--sonnet:#1f6feb;--haiku:#1a9a6b;--other:#d9730d}
+@media (prefers-color-scheme:dark){:root{--bg:#14161a;--fg:#e6e8eb;--mut:#9aa3ad;--line:#3a414b;--card:#1c2026;--bad:#ff7b7b;--badbg:#3a1f1f;--run:#f0b030;
+--ok:#7fc4a0;--wf:#4dd0e1;--opus:#a78bfa;--sonnet:#5aa7ff;--haiku:#3ecf9a;--other:#f0a53a}}
+*{box-sizing:border-box}
+body{margin:0;padding:10px 16px;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif}
+h1{font-size:18px;margin:0}h2{font-size:14px;margin:0 0 6px}h3{font-size:15px;margin:10px 0 4px}
+a{color:var(--sonnet)}.mut{color:var(--mut);font-size:12px}
+button{font:inherit;color:inherit}
+[data-fam=opus]{--fam:var(--opus)}[data-fam=sonnet]{--fam:var(--sonnet)}[data-fam=haiku]{--fam:var(--haiku)}[data-fam=other]{--fam:var(--other)}[data-fam=wf]{--fam:var(--wf)}
+#tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}#tabs:empty{display:none}
+.tab{font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:3px 10px;cursor:pointer}
+.tab[aria-selected=true]{border-color:var(--sonnet);font-weight:700}
+.meta{margin:2px 0;overflow-wrap:anywhere}.err{color:var(--bad);background:var(--badbg);border-radius:4px;padding:2px 8px;font-size:12px}
+.bad{color:var(--bad)}
+details{font-size:12px;margin:4px 0}details dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:6px 0}details dd{margin:0}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,320px);gap:12px;margin-top:8px}
+@media (max-width:760px){.wrap{grid-template-columns:minmax(0,1fr)}}
+#graph{overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--card);padding:12px;max-height:calc(100vh - 150px)}
+/* left-to-right tree in plain CSS: a branch is a card plus a column of child branches; ::before/::after draw the connectors */
+.br{display:flex;align-items:flex-start;gap:28px;position:relative}
+.kids{display:flex;flex-direction:column;gap:10px;position:relative}
+.kids::before,.kids>.br::before{content:"";position:absolute;top:22px;width:14px;border-top:1.5px solid var(--line)}
+.kids::before{left:-28px}.kids>.br::before{left:-14px}
+.kids>.br::after{content:"";position:absolute;left:-14px;top:-10px;height:calc(100% + 10px);border-left:1.5px solid var(--line)}
+.kids>.br:first-child::after{top:22px;height:calc(100% - 22px)}
+.kids>.br:last-child::after{height:32px}
+.kids>.br:first-child:last-child::after{display:none}
+.kids>.br.run::before{border-color:var(--run)}
+.card{flex:none;width:270px;padding:7px 10px;background:var(--bg);border:1px solid var(--line);border-left:5px solid var(--ok);border-radius:6px;cursor:pointer}
+.card[data-st=run]{border-left-color:var(--run)}.card[data-bad]{border-left-color:var(--bad)}
+.card[data-kind=wf]{border:2px solid var(--wf);border-left-width:5px;border-radius:14px}
+.card:hover{border-color:var(--mut)}.card:focus-visible,.card.sel{outline:2px solid var(--fg);outline-offset:1px}
+.c1{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--mut)}
+.c1 span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st{flex:none;font-weight:700}[data-st=run] .st{color:var(--run)}[data-st=bad] .st{color:var(--bad)}[data-st=ok] .st{color:var(--ok)}
+.desc{font-weight:600;margin:2px 0 4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.mr{display:flex;gap:6px;align-items:center;font-size:12px}.mr code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--fam)}
+.nums{font-size:12px;color:var(--mut);margin-top:3px;font-variant-numeric:tabular-nums}.nums[data-lv=warn]{color:var(--run)}.nums[data-lv=bad]{color:var(--bad)}
+.fl{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}.fl:empty{display:none}
+.flag,.ch{font-size:12px;border-radius:4px;padding:0 5px;white-space:nowrap}
+.flag{color:var(--bad);background:var(--badbg)}.ch{border:1px solid var(--line)}.ch.inf{color:var(--mut)}
+#feed{list-style:none;margin:0;padding:0;max-height:calc(100vh - 180px);overflow:auto;border:1px solid var(--line);border-radius:8px}
+#feed li{border-bottom:1px solid var(--line);border-left:3px solid var(--line)}
+#feed [data-k=spawn]{border-left-color:var(--sonnet)}#feed [data-k=done]{border-left-color:var(--ok)}#feed [data-k=wf]{border-left-color:var(--wf)}
+#feed [data-k=handoff],#feed [data-k=cont]{border-left-color:var(--run)}#feed [data-k=guard],#feed [data-k=limit],#feed [data-k=refused]{border-left-color:var(--bad)}
+#feed button,#feed span{display:block;width:100%;text-align:left;background:none;border:0;padding:4px 8px;font-size:12px;overflow-wrap:anywhere}
+#feed button{cursor:pointer}#feed button:hover{background:var(--card)}
+#feed time{font-family:ui-monospace,Menlo,monospace;color:var(--mut);margin-right:6px}
+#panel{position:fixed;z-index:9;top:0;right:0;bottom:0;width:min(400px,100%);overflow:auto;background:var(--bg);border-left:1px solid var(--line);
+box-shadow:0 8px 30px rgba(0,0,0,.3);padding:16px}
+#px{position:absolute;top:6px;right:8px;font-size:24px;background:none;border:0;cursor:pointer;padding:2px 10px}
+.kv{display:flex;gap:8px;margin:3px 0}.kv b{flex:none;width:96px;color:var(--mut);font-weight:400}.kv span{min-width:0;overflow-wrap:anywhere}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:12px}
+</style></head><body>
+<nav id="tabs" role="tablist"></nav>
+<header><h1 id="h1">Loading…</h1><div id="meta" class="meta mut"></div><div id="mix" class="meta mut"></div><div id="err" class="err" hidden></div>
+<details><summary>Legend</summary><dl>
+<dt>Left stripe</dt><dd>amber running, green done, red has an issue. Teal rounded card: a Workflow run.</dd>
+<dt>Dot</dt><dd>model family that ran: <span class="dot" data-fam="opus" style="display:inline-block"></span> opus <span class="dot" data-fam="sonnet" style="display:inline-block"></span> sonnet <span class="dot" data-fam="haiku" style="display:inline-block"></span> haiku <span class="dot" data-fam="other" style="display:inline-block"></span> other. "x?/y?" = requested, not yet seen running.</dd>
+<dt>Tokens</dt><dd>input-equivalent: input 1, cache write 1.25, cache read 0.1, output 5.</dd>
+<dt><span class="flag">red</span> / <span class="ch inf">grey</span></dt><dd>red flags are issues (counted); grey chips are info. Hover any chip for what it means.</dd>
+<dt>⛔ → #6 / ↪ from #4</dt><dd>#4 handed off and #6 continues it (numbers are spawn order).</dd></dl></details></header>
+<div class="wrap"><div id="graph" tabindex="0" aria-label="Delegation graph: planner on the left, spawned agents to the right"></div>
+<aside><h2>Events</h2><ol id="feed"></ol></aside></div>
+<aside id="panel" role="dialog" aria-label="Agent details" hidden><button id="px" type="button" aria-label="Close">×</button><div id="pb"></div></aside>
+<script>
+(function(){"use strict";
+var SID=(/[?&]sid=([\w-]+)/.exec(location.search)||[])[1],INDEX=!SID,DATA=INDEX?"index.data.js":SID+".data.js";
+var FAMS=["opus","sonnet","haiku","other"],cur=null,by={},live=true,sel=null,idx=null,pick=null;
+var FLAGTXT={"no-model":"The spawn call set no model.","no-effort":"The spawn call set no effort.",
+"model-mismatch":"A gateway or fallback ran a different model than requested.","effort-mismatch":"The effort that ran differs from the one requested.",
+"guard-block":"A guard hook blocked the main session from executing.","handoff":"The agent wrote a HANDOFF and stopped.",
+"tool-limit":"A hook told this agent it hit the tool-call limit.","ignored-limit":"The agent got the tool-call limit message, wrote no handoff and kept going.",
+"handoff-not-continued":"The agent handed off but no later agent continues it.","auto-filled":"A spawn hook filled a missing model or effort.",
+"orphan":"No parent spawn call was found for this agent.","frontmatter":"Model and effort come from the agent's own file.",
+"ctx":"One turn's context (input + cache read + cache write) reached the context limit."};
+function $(id){return document.getElementById(id)}
+function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+function info(f){return f==="handoff"||f==="tool-limit"||f==="auto-filled"||f==="frontmatter"||f.slice(0,4)==="ctx-"}
+function pad(n){return n<10?"0"+n:""+n}
+function hms(t){var d=new Date(t*1000);return pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds())}
+function fdur(s){s=Math.max(0,Math.round(s));return s>=3600?Math.floor(s/3600)+"h"+pad(Math.floor(s%3600/60))+"m":s>=60?Math.floor(s/60)+"m"+pad(s%60)+"s":s+"s"}
+function ftok(n){return n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n)}
+function tokTxt(t){return t?"input "+t.in.toLocaleString()+" · cache write "+t.cc.toLocaleString()+" · cache read "+t.cr.toLocaleString()+" · output "+t.out.toLocaleString():""}
+function plural(n,w){return n+" "+w+(n===1?"":"s")}
+function lsGet(){try{return localStorage.getItem("tlTab")}catch(e){return null}}
+function lsSet(v){try{localStorage.setItem("tlTab",v)}catch(e){}}
+function dur(d,n){var e=n.running?(d.status==="live"?Math.max(d.now,Date.now()/1000):d.now):n.end;return n.start==null||e==null?null:e-n.start}
+function issues(n){return n.flags.filter(function(f){return !info(f)})}
+function state(d,n){
+if(n.id==="main")return n.running?["run","● running"]:d.status==="live"?["ok","○ waiting"]:["ok","✓ done"];
+if(n.running)return ["run","● running"];
+if(n.kind==="wf"&&n.wf.state==="failed")return ["bad","✗ failed"];
+if(n.limit&&n.handoff)return ["run","⛔ stopped at "+n.limit];
+if(n.flags.indexOf("ignored-limit")>=0)return ["bad","⚠ ignored limit ("+n.tools+" calls)"];
+return ["ok","✓ done"]}
+
+function card(d,n){
+var st=state(d,n),c=el("div","card"),bad=issues(n),fl=el("div","fl"),t=dur(d,n),lim=n.id!=="main"&&!n.exempt;
+c.dataset.id=n.id;c.dataset.st=st[0];c.tabIndex=0;c.setAttribute("role","button");c.title=n.desc||"";
+if(bad.length)c.dataset.bad="1";if(n.kind==="wf")c.dataset.kind="wf";if(sel===n.id)c.classList.add("sel");
+var top=el("div","c1");top.append(el("span",null,n.id==="main"?"planner":"#"+n.n+" "+(n.phase?n.phase+" · ":"")+n.type),el("span","st",st[1]));
+var mr=el("div","mr"),dot=el("span","dot");dot.dataset.fam=n.fam;mr.append(dot,el("span",null,n.kind==="wf"?"workflow":n.fam),el("code",null,n.ran));
+var nums=el("div","nums",(t==null?"–":fdur(t))+" · "+n.tools+(lim?"/"+d.toolLimit:"")+" tools · "+(n.tokens?ftok(n.tokens):"–")+" tokens");
+nums.title=tokTxt(n.tok)+(n.peak?" · peak context "+n.peak.toLocaleString():"");
+if(lim&&n.tools>=d.toolLimit*0.8)nums.dataset.lv=n.tools>=d.toolLimit?"bad":"warn";
+function chip(cls,txt,tip){var k=el("span",cls,txt);k.title=tip;fl.append(k)}
+bad.forEach(function(f){if(f!=="handoff-not-continued")chip("flag","⚠ "+(f==="guard-block"?plural(d.denials,"guard block"):f),FLAGTXT[f]||f)});
+if(n.cont&&by[n.cont])chip("ch","↪ from #"+by[n.cont].n,"Continues the work of #"+by[n.cont].n);
+if(n.handoff){var m=d.agents.filter(function(a){return a.cont===n.id})[0];
+if(m)chip("ch","⛔ → #"+m.n,"Handed off; #"+m.n+" continues it");else chip("flag","→ handoff not continued ⚠",FLAGTXT["handoff-not-continued"])}
+n.flags.forEach(function(f){if(info(f)&&f!=="handoff")chip("ch inf",f==="tool-limit"?"⛔ hit "+n.limit+" tool calls":f.slice(0,4)==="ctx-"?"ctx "+ftok(n.peak):f,FLAGTXT[f]||FLAGTXT.ctx)});
+if(n.brief)chip("ch inf","brief "+ftok(n.brief),"Spawn prompt length: "+n.brief.toLocaleString()+" chars");
+c.append(top,el("div","desc",n.desc||"(no description)"),mr,nums,fl);
+return c}
+function branch(d,n,kids,seen){
+seen[n.id]=1;var b=el("div","br");if(n.running)b.classList.add("run");b.append(card(d,n));
+var ks=(kids[n.id]||[]).filter(function(k){return !seen[k.id]});
+if(ks.length){var k=el("div","kids");ks.forEach(function(x){k.append(branch(d,x,kids,seen))});b.append(k)}
+return b}
+
+function render(d){
+cur=d;live=d.status==="live";
+var ags=d.agents,run=ags.filter(function(a){return a.running&&a.kind!=="wf"}).length,kids={};
+var P={id:"main",n:0,type:"planner",desc:"Main session (planner)",ran:d.planner,fam:d.pfam,running:run>0||d.prun,start:d.t0,end:d.t1,tools:d.tools,
+tokens:d.tokens,tok:d.tok,peak:d.peak,flags:d.denials?["guard-block"]:[],exempt:true,req:"-",tier:"main",prompt:""};
+by={main:P};ags.forEach(function(a){by[a.id]=a});
+ags.forEach(function(a){var p=by[a.parent]?a.parent:"main";(kids[p]=kids[p]||[]).push(a)});
+var fid=document.activeElement&&document.activeElement.dataset?document.activeElement.dataset.id:null,g=$("graph");
+g.replaceChildren(branch(d,P,kids,{}));
+if(fid){var f=g.querySelector('[data-id="'+CSS.escape(fid)+'"]');if(f)f.focus()}
+var wfs=ags.filter(function(a){return a.kind==="wf"}).length,iss=ags.reduce(function(k,a){return k+issues(a).length},0)+d.denials;
+$("h1").textContent=(run?plural(run,"agent")+" running":"No agents running")+" · "+(ags.length-wfs-run)+" done"+(wfs?" · "+plural(wfs,"workflow"):"")+" · ";
+var ie=el("span",iss?"bad":null,plural(iss,"issue"));$("h1").append(ie);
+var m=$("meta"),a=el("a",null,"Session "+d.id);a.href="index.html?sid="+encodeURIComponent(d.id);
+m.replaceChildren((live?"live, updated "+hms(d.now):"ended")+" · ",a," · "+(d.cwd||"cwd unknown")+" · planner "+d.planner);
+var tot=FAMS.reduce(function(k,f){return k+(d.models[f]||0)},0);
+$("mix").textContent=ftok(tot)+" input-equiv tokens"+FAMS.filter(function(f){return d.models[f]}).map(function(f){return " · "+f+" "+Math.round(d.models[f]*100/tot)+"%"}).join("");
+$("mix").title=FAMS.map(function(f){return f+": "+tokTxt(d.modelTok[f])}).join("\n");
+$("err").hidden=!d.errors.length;$("err").textContent=d.errors.length+" parse problems: "+d.errors.join("; ");
+$("feed").replaceChildren.apply($("feed"),d.events.slice(-20).reverse().map(function(ev){
+var li=el("li"),b=el(ev.aid&&by[ev.aid]?"button":"span"),tm=el("time",null,hms(ev.t));li.dataset.k=ev.k;b.append(tm,ev.text);
+if(b.tagName==="BUTTON"){b.type="button";b.addEventListener("click",function(){openPanel(ev.aid)})}
+li.append(b);return li}));
+if(sel)fill()}
+
+function kv(a,b){var r=el("div","kv");r.append(el("b",null,a),el("span",null,b));return r}
+function openPanel(id){sel=id;render(cur);$("panel").hidden=false;var c=$("graph").querySelector('[data-id="'+CSS.escape(id)+'"]');if(c)c.scrollIntoView({block:"nearest",inline:"nearest"});$("px").focus()}
+function closePanel(){if(sel===null)return;var id=sel;sel=null;$("panel").hidden=true;render(cur);var c=$("graph").querySelector('[data-id="'+CSS.escape(id)+'"]');if(c)c.focus()}
+function fill(){
+var n=by[sel],pb=$("pb"),d=cur;if(!n){sel=null;$("panel").hidden=true;return}
+var t=dur(d,n),h=el("h3",null,(n.n?"#"+n.n+" ":"")+n.type+" · "+n.ran);h.style.paddingRight="32px";
+pb.replaceChildren(h,el("p",null,n.desc||"(no description)"));
+if(n.kind==="wf")pb.append(kv("Status",n.wf.status+" ("+n.wf.state+")"));else if(n.n)pb.append(kv("Model/effort","requested "+n.req+" → ran "+n.ran));
+pb.append(kv("Duration",t==null?"–":(n.running?"running ":"")+fdur(t)),kv("Tools",String(n.tools)),kv("Tokens",n.tokens?n.tokens.toLocaleString()+" input-equiv":"–"));
+if(n.tok)pb.append(kv("Split",tokTxt(n.tok)),kv("Peak context",n.peak?n.peak.toLocaleString()+(n.peak>=d.ctxLimit?" (over "+d.ctxLimit.toLocaleString()+")":""):"–"));
+if(n.n)pb.append(kv("Tier",n.tier),kv(n.kind==="wf"?"Run id":"Agent id",n.id));
+if(n.phase)pb.append(kv("Phase",n.phase));
+if(n.brief)pb.append(kv("Brief",n.brief.toLocaleString()+" chars"));
+if(n.wf){var w=n.wf;pb.append(kv("Workflow",w.name),kv("Launched by",by[n.parent]&&by[n.parent].n?"#"+by[n.parent].n+" "+by[n.parent].type:"planner"),
+kv("Agents",w.agents+(Object.keys(w.states).length?" ("+Object.keys(w.states).map(function(k){return w.states[k]+" "+k}).join(", ")+")":"")));
+if(w.phases.length)pb.append(kv("Phases",w.phases.join(" → ")));
+if(w.error)pb.append(el("h3",null,"Error"),el("pre",null,w.error));
+if(w.logs.length)pb.append(el("h3",null,"Log"),el("pre",null,w.logs.join("\n")))}
+if(n.handoff)pb.append(kv("Handed off",n.handoff));
+if(n.limit)pb.append(kv("Tool limit","warned at "+n.limit+" calls, ended at "+n.tools));
+if(n.cont)pb.append(kv("Continues",by[n.cont]?"#"+by[n.cont].n:n.cont));
+if(n.id==="main"&&d.denials)pb.append(kv("Guard blocks",String(d.denials)));
+if(n.flags.length){pb.append(el("h3",null,"Flags"));n.flags.forEach(function(f){var r=el("div","kv");r.append(el("span",info(f)?"ch inf":"flag",f),el("span",null,FLAGTXT[f]||FLAGTXT.ctx));pb.append(r)})}
+if(n.prompt)pb.append(el("h3",null,"Prompt excerpt"),el("pre",null,n.prompt))}
+
+function drawIndex(){
+var lv=idx.live,ids={};lv.forEach(function(x){ids[x.id]=x});
+if(!ids[pick])pick=ids[lsGet()]?lsGet():lv[0]&&lv[0].id;
+$("tabs").replaceChildren.apply($("tabs"),lv.map(function(x){
+var b=el("button","tab",x.id.slice(0,8)+" · "+(String(x.cwd||"?").split("/").pop()||"/")+" · "+x.agents.filter(function(a){return a.running&&a.kind!=="wf"}).length+" running");
+b.type="button";b.setAttribute("role","tab");b.setAttribute("aria-selected",String(x.id===pick));
+b.addEventListener("click",function(){pick=x.id;lsSet(x.id);sel=null;$("panel").hidden=true;drawIndex()});return b}));
+if(pick)render(ids[pick]);else{$("h1").textContent="No live sessions";$("graph").replaceChildren();$("feed").replaceChildren();$("meta").textContent="";$("mix").textContent=""}
+live=true}
+
+window.TL=function(d){if(!d||typeof d!=="object")return;if(INDEX){idx=d;drawIndex()}else render(d)};
+function poll(){var sc=document.createElement("script");sc.src=DATA+"?t="+Date.now();sc.onload=sc.onerror=function(){sc.remove()};document.head.appendChild(sc)}
+setInterval(function(){if(live&&document.visibilityState==="visible")poll()},3000);
+$("graph").addEventListener("click",function(e){var c=e.target.closest(".card");if(c)openPanel(c.dataset.id)});
+$("graph").addEventListener("keydown",function(e){var c=e.target.closest(".card");if(c&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openPanel(c.dataset.id)}});
+$("px").addEventListener("click",closePanel);
+document.addEventListener("keydown",function(e){if(e.key==="Escape")closePanel()});
+poll()})();
+</script></body></html>

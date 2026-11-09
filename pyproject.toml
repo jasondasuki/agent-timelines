@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-timelines"
+version = "0.1.0"
+description = "Live delegation graph of Claude Code sessions and their subagents"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+agent-timelines = "agent_timelines.cli:main"
+
+[tool.setuptools.package-data]
+agent_timelines = ["viewer.html"]
