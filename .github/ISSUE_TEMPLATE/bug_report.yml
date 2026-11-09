@@ -1,0 +1,33 @@
+name: Bug report
+description: Something is wrong or broken
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Please do not paste transcripts, prompts or data files that contain private information."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. agent-timelines serve\n2. Open the map view\n3. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      description: agent-timelines (`pip show agent-timelines`), Python, OS, browser, Claude Code.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [install / hooks, lobby, chart view, map view, CLI, other]
