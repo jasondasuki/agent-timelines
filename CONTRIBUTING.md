@@ -15,7 +15,7 @@ The package has no runtime dependencies. Python 3.9+ and Node 18+ (tests only).
 
 ```sh
 python3 tests/test_timeline.py && python3 tests/test_cli.py
-node tests/test_dungeon.js && node tests/test_actors.js
+node tests/test_dungeon.js && node tests/test_actors.js && node tests/test_lobby.js && node tests/test_gantt.js
 ```
 
 - Add or update a test for any new logic (parsing, flags, layout, placement).

@@ -1,0 +1,46 @@
+/* Pure helpers for the lobby list: search, project filter, paging. Plain ES5; window.Lobby, and module.exports for Node.
+ * Rows are the lobby rows of index.data.js (no prompt or reply text, so search covers cwd, id, planner and last event only). */
+(function (root) {
+  'use strict';
+  function s(x) { return x == null ? '' : String(x); }
+  function parts(cwd) { return s(cwd).split('/').filter(Boolean); }
+
+  // Rows in proj (when set) whose cwd + id + planner + last text contain every space-separated word of q, case-insensitive.
+  function filter(rows, q, proj) {
+    var words = s(q).toLowerCase().split(/\s+/).filter(Boolean);
+    return (rows || []).filter(function (r) {
+      if (proj && s(r.cwd) !== proj) return false;
+      var hay = [r.cwd, r.id, r.planner, r.last].map(s).join('\n').toLowerCase();
+      return words.every(function (w) { return hay.indexOf(w) >= 0; });
+    });
+  }
+
+  // [{cwd, name, n}] newest first. name = last path part; two cwds with the same last part get their parent folder added: "api (work)".
+  function projects(rows) {
+    var by = {}, list = [];
+    (rows || []).forEach(function (r) {
+      var c = s(r.cwd);
+      if (!c) return;
+      if (!by[c]) { by[c] = { cwd: c, name: parts(c).pop() || '/', n: 0, t: -Infinity }; list.push(by[c]); }
+      by[c].n++;
+      by[c].t = Math.max(by[c].t, +r.updated || 0);
+    });
+    var seen = {};
+    list.forEach(function (p) { seen[p.name] = (seen[p.name] || 0) + 1; });
+    list.forEach(function (p) { if (seen[p.name] > 1) p.name += ' (' + (parts(p.cwd).slice(-2, -1)[0] || p.cwd) + ')'; });
+    list.sort(function (a, b) { return b.t - a.t; });  // stable in modern engines: equal times keep first-seen order
+    return list.map(function (p) { return { cwd: p.cwd, name: p.name, n: p.n }; });
+  }
+
+  // One page of list; page is 0-based and clamped, so a list that shrank never leaves you on an empty page.
+  function page(list, pg, size) {
+    list = list || [];
+    size = size > 0 ? Math.floor(size) : 1;
+    var pages = Math.max(1, Math.ceil(list.length / size)), p = Math.max(0, Math.min(pages - 1, Math.floor(+pg) || 0));
+    return { items: list.slice(p * size, p * size + size), page: p, pages: pages };
+  }
+
+  var Lobby = { filter: filter, projects: projects, page: page };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Lobby;
+  root.Lobby = Lobby;
+})(typeof window !== 'undefined' ? window : this);

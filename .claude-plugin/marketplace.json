@@ -1,0 +1,17 @@
+{
+  "name": "agent-timelines",
+  "owner": {
+    "name": "jasondasuki",
+    "url": "https://github.com/jasondasuki"
+  },
+  "metadata": {
+    "description": "Agent Timelines: a live dashboard of Claude Code sessions and their subagents."
+  },
+  "plugins": [
+    {
+      "name": "agent-timelines",
+      "source": "./",
+      "description": "Live dashboard of Claude Code sessions and subagents."
+    }
+  ]
+}

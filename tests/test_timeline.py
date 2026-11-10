@@ -1,9 +1,11 @@
 """python3 tests/test_timeline.py (or pytest). Builds fake transcripts in a temp dir; never reads your real ~/.claude."""
-import json, os, sys, tempfile
+import copy, json, os, sys, tempfile
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from agent_timelines import timeline as tl
+
+DEFAULT_PRICES = copy.deepcopy(tl.PRICES)  # load_config mutates the table; setup() puts it back
 
 T = lambda sec: "2026-01-01T00:%02d:%02d.000Z" % (sec // 60, sec % 60)
 wr = lambda p, ls: open(p, "w").write("\n".join(json.dumps(x) if not isinstance(x, str) else x for x in ls) + "\n")
@@ -28,6 +30,9 @@ def setup():
     tl.TOOL_LIMIT = 50  # pin the values the assertions were written for, whatever the defaults are
     tl.RULES.clear()
     tl.RULES.update({"no-model": True, "no-effort": True})
+    tl.LOBBY_LIMIT = 200
+    tl.PRICES.clear()
+    tl.PRICES.update(copy.deepcopy(DEFAULT_PRICES))
     return d
 
 
@@ -63,6 +68,8 @@ def test_tree_flags_running_and_files():
     assert b["C"]["parent"] == "A" and b["A"]["parent"] == b["B"]["parent"] == "main"
     assert b["B"]["cont"] == "A" and b["A"]["handoff"] == "/h/x.md"
     assert b["B"]["flags"] == ["no-model", "no-effort"], b["B"]["flags"]
+    assert b["B"]["toolsBy"] == [["Bash", 2]] and b["C"]["toolsBy"] == [["Read", 2]] and s["toolsBy"] == [["Agent", 2]], "the duplicated b1 id counts once"
+    assert b["A"]["reply"] == "HANDOFF /h/x.md" and b["B"]["reply"] == "done" and b["B"]["replyLen"] == 4 and s["reply"] == ""
     assert b["A"]["flags"] == ["model-mismatch", "handoff"], b["A"]["flags"]
     assert b["C"]["flags"] == ["model-mismatch", "effort-mismatch"], b["C"]["flags"]
     assert b["F"]["flags"] == ["model-mismatch", "effort-mismatch", "orphan"], b["F"]["flags"]
@@ -93,8 +100,20 @@ def test_tree_flags_running_and_files():
     assert pj["prompts"] == {"B": b["B"]["prompt"]} and "Continue from the handoff" in pj["prompts"]["B"]
     assert "Continue from the handoff" not in raw and all(a["prompt"] == "" for a in jd["agents"]) and by(jd)["B"]["brief"] == len(b["B"]["prompt"])
     html = open(os.path.join(od, "index.html")).read()
-    assert "innerHTML" not in html and "index.data.js" in html
-    assert "prompts.js" in html and "TLP" in html
+    assert "innerHTML" not in html and "index.data.js" in html and 'src="lobby.js"' in html and 'src="gantt.js"' in html and {"lobby.js", "gantt.js"} <= set(tl.ASSETS)
+    assert "prompts.js" in html and "TLP" in html and "replies" in pj and pj["replies"]["B"] == "done" and pj["replies"]["A"] == "HANDOFF /h/x.md"
+    # a long multi-line final reply: teaser in the data file, full text in the prompts file, neither can close a script tag
+    longr = "line one\n</script><b>x</b>\n" + "y" * 473
+    assert len(longr) == 500
+    long_fin = fin("l", 9, "claude-opus-5")
+    long_fin["message"]["content"][0]["text"] = longr
+    pl = session(pd, "sessL", [spawn("l1", "general-purpose", 0, **FULL)], [("L1", meta("l1"), [use("l2", "mcp__x__y", {}, 5), long_fin])])
+    sl = tl.load(pl)
+    tl.publish(sl, os.path.join(d, "outL"))
+    ld, lp = (open(os.path.join(d, "outL", "sessL." + k + ".js")).read() for k in ("data", "prompts"))
+    la = by(unwrap(os.path.join(d, "outL", "sessL.data.js")))["L1"]
+    assert len(la["reply"]) <= 160 and "\n" not in la["reply"] and la["replyLen"] == 500 and la["toolsBy"] == [["mcp__x__y", 1]]
+    assert json.loads(lp.strip()[4:-2])["replies"]["L1"] == longr and "</" not in ld and "</" not in lp
     side = lambda sid, **k: tl.write_atomic(os.path.join(od, sid + ".data.js"), "TL(%s);\n" % tl.js(dict({"id": sid, "status": "live", "updated": now - 5, "agents": [], "ctxLimit": 1}, **k)))
     tl.write_atomic(os.path.join(od, "sess1.data.js"), "TL(%s);\n" % tl.js(dict(s, updated=now - 10)))  # full data, still live
     side("liveB")
@@ -110,7 +129,7 @@ def test_tree_flags_running_and_files():
     want = sum(f not in tl.INFO_FLAGS and not f.startswith("ctx-") for a in s["agents"] for f in a["flags"]) + s["denials"]
     assert r1["heroes"] == 6 and r1["running"] == 2 and r1["issues"] == want == 13 and r1["gold"] == sum(s["models"].values()) and len(r1["party"]) == 6, r1
     assert r1["party"][3] == ["executor", None, True, False] and r1["last"] == s["events"][-1]["text"]
-    assert "prompt" not in json.dumps(rows) and "<\\/" not in json.dumps(rows), "lobby rows carry no prompt text"
+    assert "prompt" not in json.dumps(rows) and "reply" not in json.dumps(rows) and "<\\/" not in json.dumps(rows), "lobby rows carry no prompt or reply text"
     for f in ("old.data.js", "ancient.html", "gone.prompts.js"):
         open(os.path.join(od, f), "w").write("x")
         os.utime(os.path.join(od, f), (1, 1))
@@ -121,7 +140,7 @@ def test_tree_flags_running_and_files():
     hb = [use("g1", "Read", {}, 10), use("hb1", "SubagentHandback", {"message": "x"}, 20),
           {"type": "user", "timestamp": T(21), "message": {"content": [{"type": "tool_result", "tool_use_id": "hb1", "content": "Report delivered."}]}}]
     p3 = session(pd, "sess3", [spawn("m1", "general-purpose", 0, model="sonnet", effort="high")], [("G", meta("m1"), hb)])
-    assert not tl.load(p3)["agents"][0]["running"]
+    assert not tl.load(p3)["agents"][0]["running"] and tl.load(p3)["agents"][0]["reply"] == "x"
     wr(os.path.join(pd, "sess3", "subagents", "agent-G.jsonl"), hb + [use("g2", "Read", {}, 30)])
     assert tl.load(p3)["agents"][0]["running"]
     od2 = os.path.join(d, "out2")
@@ -206,6 +225,8 @@ def test_workflows_and_main_running():
     assert b["wf_run-1"]["end"] == s["now"] and b["wf_lost-1"]["wf"]["status"] == "no result recorded" and w["parent"] == "main" and w["desc"] == "S<b>"
     assert b["W1"]["parent"] == "wf_done-1" and b["W1"]["flags"] == [] and b["W1"]["prompt"] == "real task" and b["W1"]["phase"] == "Hunt"
     assert b["W2"]["running"] and not b["W3"]["running"] and w["tokens"] == b["W1"]["tokens"] > 0
+    assert w["toolsBy"] == b["W1"]["toolsBy"] == [["Read", 1]] and b["wf_run-1"]["toolsBy"] == [["Read", 1]] and w["reply"] == ""
+    assert sorted(s["toolsBy"]) == [["Workflow", 5]], s["toolsBy"]
     assert sum(s["models"].values()) == s["tokens"] + sum(a["tokens"] for a in s["agents"] if a.get("kind") != "wf"), "workflow nodes add no tokens"
     ev = [e["text"] for e in s["events"] if e["k"] == "wf"]
     assert "workflow wfn failed (killed) after 1m25s" in ev and "planner → started workflow wfn" in ev and sum("live" in e for e in ev) == 1, ev
@@ -217,6 +238,81 @@ def test_workflows_and_main_running():
     assert not mrun([use("m1", "Bash", {}, 1), {"type": "user", "timestamp": T(3), "message": {"content": [{"type": "text", "text": "[Request interrupted by user]"}]}}])
     os.utime(mp, (1, 1))
     assert not tl.load(mp)["prun"], "idle past STALE"
+
+
+def test_lobby_limit():
+    d = setup()
+    od, now = os.path.join(d, "out"), 1e9
+    os.makedirs(od)
+    for i in range(35):
+        tl.write_atomic(os.path.join(od, "s%02d.data.js" % i), "TL(%s);\n" % tl.js({"id": "s%02d" % i, "status": "ended", "updated": now - 100 - i, "agents": [], "ctxLimit": 1}))
+    tl.build_index(od, now)
+    rows = unwrap(os.path.join(od, "index.data.js"))["sessions"]
+    assert len(rows) == 35 and rows[0]["id"] == "s00", "more than the old 30"
+    tl.LOBBY_LIMIT = 10
+    tl.build_index(od, now)
+    rows = unwrap(os.path.join(od, "index.data.js"))["sessions"]
+    assert [r["id"] for r in rows] == ["s%02d" % i for i in range(10)], "newest first, cut at the limit"
+    cfg = os.path.join(d, "config.json")
+    json.dump({"lobby_limit": 25}, open(cfg, "w"))
+    tl.load_config(cfg)
+    assert tl.LOBBY_LIMIT == 25
+
+
+def test_cost():
+    d = setup()
+    pd = os.path.join(d, "proj")
+    pr = tl.price_of
+    assert pr("claude-opus-5-5")["in"] == 4 and pr("claude-opus-5")["in"] == 5 and pr("claude-opus-5-20261201")["in"] == 5
+    assert pr("claude-opus-4-1-20250805")["in"] == 15 and pr("claude-opus-4-8")["in"] == 5 and pr("us.anthropic.claude-sonnet-4-5-20250929-v1:0")["in"] == 3
+    assert pr("claude-fable-5-2")["out"] == 40 and pr("claude-fable-5")["cr"] == 1
+    assert pr("azure_ai/gpt-6-luna") is None and pr("claude-3-5-sonnet-20241022") is None and pr(None) is None
+    # one assistant turn; usage goes in as given
+    turn = lambda i, model, sec=10, **u: {"type": "assistant", "timestamp": T(sec), "effort": "high", "message": {
+        "id": i, "stop_reason": "end_turn", "model": model, "usage": u, "content": [{"type": "text", "text": "done"}]}}
+    one = iter(range(99))
+    usd = lambda model, **u: tl.load(session(pd, "c%d" % next(one), [turn("t", model, **u)], []))["usd"]
+    near = lambda a, b: abs(a - b) < 1e-9
+    assert near(usd("claude-fable-5-2", input_tokens=1000, cache_creation_input_tokens=3000, cache_read_input_tokens=100000, output_tokens=500,
+                    cache_creation={"ephemeral_5m_input_tokens": 1000, "ephemeral_1h_input_tokens": 2000}), 0.09)
+    assert near(usd("claude-haiku-5-5", input_tokens=100, cache_read_input_tokens=150000, output_tokens=10), 0.007575), "over 100k prompt tokens: 5x"
+    assert near(usd("claude-haiku-5-5", input_tokens=100, cache_read_input_tokens=50000, output_tokens=10), 0.000515), "under the threshold"
+    assert near(usd("claude-opus-5-5", input_tokens=1000, output_tokens=1000, speed="fast"), 0.048)
+    assert near(usd("claude-opus-5-5", input_tokens=1000, output_tokens=1000), 0.024)
+    assert near(usd("claude-opus-5", cache_creation_input_tokens=1000000), 6.25), "no cache_creation breakdown: all writes at the 5-minute rate"
+    # a tree: planner + opus agent + workflow with a gateway-model agent; streamed duplicate lines count once
+    dup = turn("dup", "claude-opus-5", input_tokens=1000000, output_tokens=0)
+    p = session(pd, "sessC", [spawn("c1", "general-purpose", 0, **FULL), spawn("c2", "general-purpose", 1, **FULL), turn("pm", "claude-sonnet-5", input_tokens=1000000)], [
+        ("C1", meta("c1"), [dup, dup]), ("C2", meta("c2"), [turn("g", "azure_ai/gpt-6-luna", input_tokens=500, output_tokens=5)])])
+    s = tl.load(p)
+    b = by(s)
+    assert near(b["C1"]["usd"], 5) and not b["C1"]["unpriced"], "same message id on two lines: once"
+    assert b["C2"]["usd"] == 0 and b["C2"]["unpriced"] and s["cost"]["unpriced"] == ["azure_ai/gpt-6-luna"]
+    assert abs(s["usd"] - 2.00035) < 1e-9, "1M sonnet tokens + two 10-in/5-out spawn turns"  # opus-5: (10 * 5 + 5 * 25) / 1e6 each
+    assert near(s["cost"]["total"], s["usd"] + sum(a["usd"] for a in s["agents"])) and near(s["cost"]["total"], 7.00035)
+    assert [m["model"] for m in s["cost"]["models"]] == ["claude-opus-5", "claude-sonnet-5", "azure_ai/gpt-6-luna"], "most expensive first"
+    assert s["cost"]["asof"] == tl.PRICES_ASOF and s["cost"]["models"][0]["fam"] == "opus" and s["cost"]["models"][0]["tok"]["in"] == 1000020  # the agent's 1M plus two spawn turns
+    assert s["tokens"] == 1000070 and tl.summary(s, s["now"])["usd"] == s["cost"]["total"] and tl.summary({"updated": 1}, 2)["usd"] is None
+    # a workflow adds no cost of its own, its node shows its agents' sum
+    wm = {"agentType": "general-purpose", "description": "w", "workflowPhase": "P"}
+    run = [use("w1", "Workflow", {}, 0), {"type": "user", "timestamp": T(1), "toolUseResult": {"taskType": "local_workflow", "workflowName": "n", "runId": "wf_c-1"},
+                                          "message": {"content": [{"type": "tool_result", "tool_use_id": "w1", "content": "Workflow launched."}]}}]
+    pw = session(pd, "sessW", run, [("W1", wm, [turn("a", "claude-opus-5", input_tokens=1000000)]), ("W2", wm, [turn("b", "claude-opus-5", input_tokens=2000000)])], "workflows/wf_c-1")
+    sw = tl.load(pw)
+    assert near(by(sw)["wf_c-1"]["usd"], 15) and near(sw["cost"]["total"], 15 + sw["usd"]), "the workflow node adds nothing on top of its agents"
+    # config: prices merge per model; a bad entry exits
+    cfg = os.path.join(d, "config.json")
+    json.dump({"prices": {"gpt-6": {"in": 1, "out": 2}}}, open(cfg, "w"))
+    tl.load_config(cfg)
+    assert tl.PRICES["opus-5"]["in"] == 5 and near(tl.usd_of(tl.price_of("azure_ai/gpt-6-luna"), dict(zip(("in", "cc", "cr", "out"), (1000000, 0, 0, 500000))), 0, False), 2)
+    assert tl.load(p)["cost"]["unpriced"] == [], "the gateway model is priced now"
+    for bad in ({"x": {"input": 1}}, {"x": {"in": "1"}}, {"x": {"over": [1]}}, {"x": 3}, [1]):
+        json.dump({"prices": bad}, open(cfg, "w"))
+        try:
+            tl.load_config(cfg)
+            assert False, "bad prices must exit: %r" % bad
+        except SystemExit:
+            pass
 
 
 def test_rules_and_config():
@@ -241,6 +337,6 @@ def test_rules_and_config():
 
 
 if __name__ == "__main__":
-    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running, test_rules_and_config):
+    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running, test_lobby_limit, test_cost, test_rules_and_config):
         t()
     print("ok")
