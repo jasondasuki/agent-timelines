@@ -25,6 +25,9 @@ def setup():
     os.makedirs(tl.AGENTS_DIR)
     for name, model in (("pinme", "sonnet"), ("runner", "haiku")):
         open(os.path.join(tl.AGENTS_DIR, name + ".md"), "w").write("---\nname: %s\nmodel: %s\neffort: high\n---\nbody\nmodel: nope\n" % (name, model))
+    tl.TOOL_LIMIT = 50  # pin the values the assertions were written for, whatever the defaults are
+    tl.RULES.clear()
+    tl.RULES.update({"no-model": True, "no-effort": True})
     return d
 
 
@@ -84,8 +87,14 @@ def test_tree_flags_running_and_files():
     assert raw.startswith("TL(") and "</" not in raw and "<\\/script>" in raw, "script-context escaping"
     jd = unwrap(os.path.join(od, "sess1.data.js"))
     assert "<script>x</script>" in by(jd)["D"]["desc"] and jd["closed"] == [] and jd["updated"] == s["updated"]
+    praw = open(os.path.join(od, "sess1.prompts.js")).read()
+    pj = json.loads(praw.strip()[4:-2])
+    assert praw.startswith("TLP(") and "</" not in praw and pj["id"] == "sess1"
+    assert pj["prompts"] == {"B": b["B"]["prompt"]} and "Continue from the handoff" in pj["prompts"]["B"]
+    assert "Continue from the handoff" not in raw and all(a["prompt"] == "" for a in jd["agents"]) and by(jd)["B"]["brief"] == len(b["B"]["prompt"])
     html = open(os.path.join(od, "index.html")).read()
     assert "innerHTML" not in html and "index.data.js" in html
+    assert "prompts.js" in html and "TLP" in html
     side = lambda sid, **k: tl.write_atomic(os.path.join(od, sid + ".data.js"), "TL(%s);\n" % tl.js(dict({"id": sid, "status": "live", "updated": now - 5, "agents": [], "ctxLimit": 1}, **k)))
     tl.write_atomic(os.path.join(od, "sess1.data.js"), "TL(%s);\n" % tl.js(dict(s, updated=now - 10)))  # full data, still live
     side("liveB")
@@ -102,12 +111,12 @@ def test_tree_flags_running_and_files():
     assert r1["heroes"] == 6 and r1["running"] == 2 and r1["issues"] == want == 13 and r1["gold"] == sum(s["models"].values()) and len(r1["party"]) == 6, r1
     assert r1["party"][3] == ["executor", None, True, False] and r1["last"] == s["events"][-1]["text"]
     assert "prompt" not in json.dumps(rows) and "<\\/" not in json.dumps(rows), "lobby rows carry no prompt text"
-    for f in ("old.data.js", "ancient.html"):
+    for f in ("old.data.js", "ancient.html", "gone.prompts.js"):
         open(os.path.join(od, f), "w").write("x")
         os.utime(os.path.join(od, f), (1, 1))
     os.utime(os.path.join(od, "liveB.data.js"), (1, 1))
     tl.purge(od, "liveB", now)
-    assert sorted(os.listdir(od)) == sorted(tl.ASSETS + ("bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "staleC.data.js", "oldD.data.js"))
+    assert sorted(os.listdir(od)) == sorted(tl.ASSETS + ("bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "sess1.prompts.js", "staleC.data.js", "oldD.data.js"))
     # SubagentHandback ends an agent; a later assistant line resumes it; SubagentStop/Start keep the closed list
     hb = [use("g1", "Read", {}, 10), use("hb1", "SubagentHandback", {"message": "x"}, 20),
           {"type": "user", "timestamp": T(21), "message": {"content": [{"type": "tool_result", "tool_use_id": "hb1", "content": "Report delivered."}]}}]
@@ -162,6 +171,10 @@ def test_limits_tokens_tiers():
     assert b["P1"]["peak"] == 230005 and b["P1"]["tokens"] == 5 + 25000 + 21000 + 35 and b["P4"]["brief"] == 900 and b["P4"]["prompt"] == "x" * 900
     assert s["modelTok"]["sonnet"]["cr"] == 210000 and sum(s["models"].values()) == s["tokens"] + sum(a["tokens"] for a in s["agents"])
     assert [e["text"] for e in s["events"] if e["k"] == "refused"] == ["brief refused: 8001 chars (>8000)"]
+    assert [tl.family(m) for m in ("claude-fable-5-2", "claude-mythos-5-2", "azure_ai/gpt-6-luna", None)] == ["fable", "mythos", "other", "other"]
+    pf = session(pd, "sessF", [fin("x", 1, "claude-fable-5-2")], [])
+    sf = tl.load(pf)
+    assert sf["pfam"] == "fable" and set(sf["models"]) == set(tl.FAMILIES) | {"other"}
 
 
 def test_workflows_and_main_running():
@@ -206,7 +219,28 @@ def test_workflows_and_main_running():
     assert not tl.load(mp)["prun"], "idle past STALE"
 
 
+def test_rules_and_config():
+    d = setup()
+    pd = os.path.join(d, "proj")
+    p = session(pd, "sessR", [spawn("r1", "general-purpose", 0), spawn("r2", "general-purpose", 1, model="inherit", effort="high")], [
+        ("R1", meta("r1"), [fin("r", 5)]), ("R2", meta("r2"), [fin("s", 6)])])
+    b = by(tl.load(p))
+    assert b["R1"]["flags"] == ["no-model", "no-effort"] and b["R2"]["flags"] == [], "inherit is not a mismatch"
+    tl.RULES.update({"no-model": False, "no-effort": False})
+    assert by(tl.load(p))["R1"]["flags"] == []
+    cfg = os.path.join(d, "config.json")
+    json.dump({"rules": {"no-model": True}, "tool_limit": 40}, open(cfg, "w"))
+    tl.load_config(cfg)
+    assert tl.RULES["no-model"] and not tl.RULES["no-effort"] and tl.TOOL_LIMIT == 40 and tl.load(p)["toolLimit"] == 40
+    json.dump({"rules": {"nope": True}}, open(cfg, "w"))
+    try:
+        tl.load_config(cfg)
+        assert False, "unknown rule must be an error"
+    except SystemExit:
+        pass
+
+
 if __name__ == "__main__":
-    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running):
+    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running, test_rules_and_config):
         t()
     print("ok")

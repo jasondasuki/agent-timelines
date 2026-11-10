@@ -15,7 +15,8 @@ keywords = ["claude-code", "claude", "agents", "subagents", "dashboard", "observ
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
-  "Operating System :: OS Independent",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Topic :: Software Development :: Debuggers",

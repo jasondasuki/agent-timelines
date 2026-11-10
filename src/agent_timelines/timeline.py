@@ -11,16 +11,21 @@ HANDOVER_DIR = os.path.join(CLAUDE_DIR, "handovers")  # <date>-<agent_id>.md han
 DENY = "Main session does not execute"  # text of a guard hook that blocks the main session from doing work itself
 TIERS = {"Explore": "scanner", "Plan": "plan", "writer": "writer", "runner": "runner", "general-purpose": "executor"}
 CTX_LIMIT = 200000  # one turn's context (input + cache read + cache write) worth flagging
-TOOL_LIMIT = 50  # tool calls after which a hand-off hook tells an agent to stop
+TOOL_LIMIT = None  # tool calls after which a hand-off hook tells an agent to stop; None = no such hook, the viewer shows a plain count
+FLAG_NAMES = ("no-model", "no-effort", "auto-filled", "frontmatter", "model-mismatch", "effort-mismatch", "ctx", "handoff", "tool-limit",
+              "ignored-limit", "orphan", "handoff-not-continued")
+RULES = {"no-model": False, "no-effort": False}  # flag -> shown; a flag not listed is on. "ctx" stands for ctx-<N>k
 BRIEF_LIMIT = 8000  # a spawn hook refusing longer briefs answers "Brief is N chars (>BRIEF_LIMIT)"
 RETAIN_DAYS = 30
+FAMILIES = ("fable", "mythos", "opus", "sonnet", "haiku")  # model families with their own colour; anything else is "other"
 WEIGHTS = {"in": 1, "cc": 1.25, "cr": 0.1, "out": 5}  # cost per token, input = 1
 STALE = 600  # s: an unfinished agent whose transcript is idle this long is dead, not running
 LIVE_AGE = 3600  # s: a session with no activity this long is ended
 ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js")  # sprites + font (assets/LICENSES.txt) + map view scripts
 CONFIG = os.path.expanduser(os.environ.get("AGENT_TIMELINES_CONFIG") or "~/.config/agent-timelines/config.json")
 KEYS = {"out_dir": "OUT_DIR", "agents_dir": "AGENTS_DIR", "handover_dir": "HANDOVER_DIR", "tiers": "TIERS", "guard_text": "DENY",
-        "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS"}
+        "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS",
+        "rules": "RULES"}
 
 
 def load_config(path=CONFIG):
@@ -34,7 +39,13 @@ def load_config(path=CONFIG):
     if bad:
         sys.exit("%s: unknown keys %s (known: %s)" % (path, sorted(bad), sorted(KEYS)))
     for k, v in cfg.items():
-        globals()[KEYS[k]] = os.path.expanduser(v) if k.endswith("_dir") else v
+        if k == "rules":
+            unknown = set(v) - set(FLAG_NAMES)
+            if unknown:
+                sys.exit("%s: unknown rules %s (known: %s)" % (path, sorted(unknown), sorted(FLAG_NAMES)))
+            RULES.update(v)  # merged, so naming one rule keeps the defaults of the others
+        else:
+            globals()[KEYS[k]] = os.path.expanduser(v) if k.endswith("_dir") else v
 
 
 load_config()
@@ -68,7 +79,7 @@ def top(counts):
 
 def family(model):
     m = (model or "").lower()
-    return next((f for f in ("opus", "sonnet", "haiku") if f in m), "other")
+    return next((f for f in FAMILIES if f in m), "other")
 
 
 def ran(model, effort, actual, actual_effort):
@@ -220,7 +231,7 @@ def agent(aid, m, s, first, wf, age, inp, now, closed, ended):
         ("no-model", not model and not wf), ("no-effort", not effort and not wf),  # a workflow script sets them per agent() call
         ("auto-filled", inp and ((not inp.get("model") and m.get("model")) or (not inp.get("effort") and m.get("effort")))),
         ("frontmatter", fm),
-        ("model-mismatch", model and actual and model.lower() not in actual.lower()),
+        ("model-mismatch", model and model != "inherit" and actual and model.lower() not in actual.lower()),
         ("effort-mismatch", effort and actual_effort and effort != actual_effort),
         (CTX_FLAG, s["peak"] >= CTX_LIMIT and not exempt),
         ("handoff", handoff),
@@ -349,7 +360,7 @@ def load(path, now=None, closed=(), ended=False, event=None):
         if a["cont"]:
             ev(a["start"], "cont", "%s · continues %s" % (name, who(a["cont"])))
     events.sort(key=lambda e: e["t"])
-    ftok = {f: dict.fromkeys(WEIGHTS, 0) for f in ("opus", "sonnet", "haiku", "other")}  # planner and agents together
+    ftok = {f: dict.fromkeys(WEIGHTS, 0) for f in FAMILIES + ("other",)}  # planner and agents together
     for sc in [main] + [a["_s"] for a in agents]:
         for f, c in sc["tok"].items():
             add_tok(ftok[f], c)
@@ -357,6 +368,7 @@ def load(path, now=None, closed=(), ended=False, event=None):
     mrun = not ended and event != "Stop" and (event == "UserPromptSubmit" or (not main["final"] and mage < STALE))
     activity = max([main["t1"] or 0] + [a["end"] or 0 for a in nodes])  # running nodes end at now
     for a in agents:
+        a["flags"] = [f for f in a["flags"] if RULES.get("ctx" if f.startswith("ctx-") else f, True)]
         for k in [k for k in a if k[0] == "_"]:
             del a[k]
     mtok = total_tok(main["tok"])
@@ -433,7 +445,7 @@ def purge(out_dir, keep, now=None):
     now = now or time.time()
     for p in glob.glob(os.path.join(out_dir, "*")):
         b = os.path.basename(p)
-        if b.split(".")[0] in ("index", "latest", "viewer", keep) or not re.search(r"\.(data\.js|html|json)$", b):
+        if b.split(".")[0] in ("index", "latest", "viewer", keep) or not re.search(r"\.(data\.js|prompts\.js|html|json)$", b):
             continue
         try:
             if now - os.path.getmtime(p) > RETAIN_DAYS * 86400:
@@ -453,10 +465,14 @@ def closed_ids(out_dir, sid, event=None, aid=None):
 
 
 def publish(d, out_dir=None, closed=()):
-    """Write <sid>.data.js, rebuild the index, drop expired sessions; returns the session's page."""
+    """Write <sid>.data.js (prompts emptied) and <sid>.prompts.js (the prompts), rebuild the index, drop expired sessions; returns the session's page."""
     out_dir = out_dir or OUT_DIR
     os.makedirs(out_dir, exist_ok=True)
-    write_atomic(os.path.join(out_dir, d["id"] + ".data.js"), "TL(%s);\n" % js(dict(d, closed=sorted(closed))))
+    prompts = {a["id"]: a["prompt"] for a in d["agents"] if a.get("prompt")}
+    slim = dict(d, agents=[dict(a, prompt="") for a in d["agents"]], closed=sorted(closed))
+    # prompts first: the data file must never point at prompts that are not on disk yet
+    write_atomic(os.path.join(out_dir, d["id"] + ".prompts.js"), "TLP(%s);\n" % js({"id": d["id"], "prompts": prompts}))
+    write_atomic(os.path.join(out_dir, d["id"] + ".data.js"), "TL(%s);\n" % js(slim))
     build_index(out_dir)
     purge(out_dir, d["id"])
     return os.path.join(out_dir, "index.html") + "?sid=" + d["id"]

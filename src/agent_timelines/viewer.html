@@ -3,9 +3,9 @@
 /* Pixel dungeon. Sprites: Kenney Tiny Dungeon + 1-Bit Pack (CC0); font: Press Start 2P (OFL). See assets/LICENSES.txt. */
 @font-face{font-family:"PS2P";src:url(PressStart2P-Regular.ttf) format("truetype");font-display:swap}
 :root{--bg:#1b1424;--panel:#2a2036;--panel2:#352a45;--edge:#0d0912;--hi:#4b3d60;--fg:#f4ead5;--mut:#a99bb8;--gold:#ffd23f;--bad:#ff5a5a;--ok:#5be37a;--run:#ffd23f;
---opus:#b48cff;--sonnet:#5ab4ff;--haiku:#5be37a;--other:#ff9f43;--wf:#4de0e0}
+--fable:#ff8ad0;--mythos:#c0f060;--opus:#b48cff;--sonnet:#5ab4ff;--haiku:#5be37a;--other:#ff9f43;--wf:#4de0e0}
 @media (prefers-color-scheme:light){:root:not([data-theme=dark]){--bg:#e9d9b8;--panel:#fbf1dc;--panel2:#f1e2c2;--edge:#3b2a1e;--hi:#fffaf0;--fg:#2b1d14;--mut:#7a6450;
---gold:#9a6a00;--bad:#c62828;--ok:#1f8a3a;--run:#9a6a00;--opus:#6d3fd6;--sonnet:#1f6feb;--haiku:#1a8a5a;--other:#c25e00;--wf:#00838f}}
+--gold:#9a6a00;--bad:#c62828;--ok:#1f8a3a;--run:#9a6a00;--fable:#b0257a;--mythos:#5a7a00;--opus:#6d3fd6;--sonnet:#1f6feb;--haiku:#1a8a5a;--other:#c25e00;--wf:#00838f}}
 *{box-sizing:border-box}
 html{background:var(--bg)}
 body{margin:0;padding:12px 16px;color:var(--fg);font:10px/1.8 "PS2P",ui-monospace,Menlo,monospace;min-height:100vh;
@@ -15,7 +15,7 @@ linear-gradient(90deg,var(--panel2) 3px,transparent 3px) 24px 12px/48px 24px,var
 h1{font-size:14px;margin:0;line-height:1.6}h2{font-size:10px;margin:0 0 8px;color:var(--gold)}h3{font-size:10px;margin:12px 0 6px;color:var(--gold)}
 a{color:var(--sonnet)}.mut{color:var(--mut)}.bad{color:var(--bad)}
 button{font:inherit;color:inherit}
-[data-fam=opus]{--fam:var(--opus)}[data-fam=sonnet]{--fam:var(--sonnet)}[data-fam=haiku]{--fam:var(--haiku)}[data-fam=other]{--fam:var(--other)}[data-fam=wf]{--fam:var(--wf)}[data-fam=plan]{--fam:var(--gold)}
+[data-fam=fable]{--fam:var(--fable)}[data-fam=mythos]{--fam:var(--mythos)}[data-fam=opus]{--fam:var(--opus)}[data-fam=sonnet]{--fam:var(--sonnet)}[data-fam=haiku]{--fam:var(--haiku)}[data-fam=other]{--fam:var(--other)}[data-fam=wf]{--fam:var(--wf)}[data-fam=plan]{--fam:var(--gold)}
 /* chunky pixel frame: hard border + notched corners + hard drop shadow */
 .px{background:var(--panel);border:3px solid var(--edge);box-shadow:inset 3px 3px 0 var(--hi),inset -3px -3px 0 var(--panel2),4px 4px 0 rgba(0,0,0,.45);
 clip-path:polygon(0 3px,3px 3px,3px 0,calc(100% - 3px) 0,calc(100% - 3px) 3px,100% 3px,100% calc(100% - 3px),calc(100% - 3px) calc(100% - 3px),calc(100% - 3px) 100%,3px 100%,3px calc(100% - 3px),0 calc(100% - 3px))}
@@ -133,7 +133,7 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 <script>
 (function(){"use strict";
 var SID=(/[?&]sid=([\w-]+)/.exec(location.search)||[])[1],INDEX=!SID,DATA=INDEX?"index.data.js":SID+".data.js";
-var FAMS=["opus","sonnet","haiku","other"];
+var FAMS=["fable","mythos","opus","sonnet","haiku","other"];
 /* sprite cells [sheet, column, row]: td = Tiny Dungeon (12 columns), ob = 1-Bit Pack (48 columns) */
 var HERO={main:["td",0,7],executor:["td",0,8],scanner:["td",1,7],plan:["td",4,8],writer:["td",3,8],runner:["td",4,7],other:["td",3,7],workflow:["td",5,7],wfrun:["td",8,7],ghost:["td",1,10]};
 var ICON={heart:["ob",39,10],heart0:["ob",40,10],coin:["ob",43,12],skull:["ob",38,11],key:["ob",32,11],hourglass:["ob",39,12],trophy:["ob",40,16],stop:["ob",37,21],warn:["ob",35,21],potion:["ob",39,11],chest:["td",5,7]};
@@ -145,7 +145,7 @@ var FLAGTXT={"no-model":"The spawn call set no model.","no-effort":"The spawn ca
 "handoff-not-continued":"The agent handed off but no later agent continues it.","auto-filled":"A spawn hook filled a missing model or effort.",
 "orphan":"No parent spawn call was found for this agent.","frontmatter":"Model and effort come from the agent's own file.",
 "ctx":"One turn's context (input + cache read + cache write) reached the context limit."};
-var cur=null,by={},live=true,sel=null,idx=null,prev={},seenEv={},first=true;
+var cur=null,by={},live=true,sel=null,idx=null,prev={},seenEv={},first=true,PR={},prBusy=false;
 function $(id){return document.getElementById(id)}
 function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function spr(s,scale,cls){var e=el("i","spr "+s[0]+(cls?" "+cls:""));e.style.setProperty("--c",s[1]);e.style.setProperty("--r",s[2]);e.style.setProperty("--s",scale||2);e.setAttribute("aria-hidden","true");return e}
@@ -183,7 +183,7 @@ var STREAL={QUESTING:"running now",RESTING:"session is live, main session is wai
 RETREATED:"stopped at the tool-call limit and handed off",BERSERK:"got the tool-limit message, wrote no handoff and kept going",DEFEATED:"failed: killed, or no result recorded"};
 function chip(fl,c,icon,txt,tip){var k=el("span","chip "+c);if(icon)k.append(spr(icon,1));k.append(txt);k.title=tip;fl.append(k)}
 function card(d,n){
-var st=state(d,n),c=el("div","card px"),bad=issues(n),fl=el("div","fl"),t=dur(d,n),lim=n.id!=="main"&&!n.exempt,p=prev[n.id];
+var st=state(d,n),c=el("div","card px"),bad=issues(n),fl=el("div","fl"),t=dur(d,n),lim=!!d.toolLimit&&n.id!=="main"&&!n.exempt,p=prev[n.id];
 c.dataset.id=n.id;c.dataset.st=st[0];c.dataset.fam=famOf(n);c.tabIndex=0;c.setAttribute("role","button");c.title=n.desc||"";
 c.setAttribute("aria-label",name(n)+", "+st[1]+", "+(n.desc||"")+(bad.length?", "+plural(bad.length,"issue"):""));
 if(bad.length)c.dataset.bad="1";if(sel===n.id)c.classList.add("sel");
@@ -245,7 +245,9 @@ b.append(spr(sprite(n,st),1),el("span",null,name(n)+" · "+st[1]+" · "+(n.desc|
 if(sel)fill();first=false;if(VIEW==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
 
 function kv(a,b){var r=el("div","kv");r.append(el("b",null,a),el("span",null,b));return r}
-function openPanel(id){sel=id;$("panel").hidden=false;render(cur);var c=$("graph").querySelector('[data-id="'+CSS.escape(id)+'"]');if(c)c.scrollIntoView({block:"nearest",inline:"nearest"});$("px").focus()}
+function openPanel(id){sel=id;
+if(by[id]&&by[id].brief&&!by[id].prompt&&PR[id]==null)loadPrompts();
+$("panel").hidden=false;render(cur);var c=$("graph").querySelector('[data-id="'+CSS.escape(id)+'"]');if(c)c.scrollIntoView({block:"nearest",inline:"nearest"});$("px").focus()}
 function closePanel(){if(sel===null)return;var id=sel;sel=null;$("panel").hidden=true;render(cur);var c=$("graph").querySelector('[data-id="'+CSS.escape(id)+'"]');if(c)c.focus()}
 function fill(){
 var n=by[sel],pb=$("pb"),d=cur;if(!n){sel=null;$("panel").hidden=true;return}
@@ -253,7 +255,7 @@ var st=state(d,n),t=dur(d,n),h=el("h3",null,name(n));h.style.cssText="margin-top
 pb.replaceChildren(h,el("p",null,n.desc||"(no description)"));
 pb.append(kv("Status",st[1]+(n.kind==="wf"?" ("+n.wf.status+")":"")));
 if(n.n&&n.kind!=="wf")pb.append(kv("Model/effort","asked "+n.req+" → ran "+n.ran));else pb.append(kv("Ran",n.ran));
-pb.append(kv("Time",t==null?"–":(n.running?"questing ":"")+fdur(t)),kv("Tools",n.tools+(n.n&&!n.exempt?" of "+d.toolLimit:"")),kv("Gold",n.tokens?n.tokens.toLocaleString()+" input-equiv tokens":"–"));
+pb.append(kv("Time",t==null?"–":(n.running?"questing ":"")+fdur(t)),kv("Tools",n.tools+(d.toolLimit&&n.n&&!n.exempt?" of "+d.toolLimit:"")),kv("Gold",n.tokens?n.tokens.toLocaleString()+" input-equiv tokens":"–"));
 if(n.tok)pb.append(kv("Split",tokTxt(n.tok)),kv("Peak context",n.peak?n.peak.toLocaleString()+(n.peak>=d.ctxLimit?" (over "+d.ctxLimit.toLocaleString()+")":""):"–"));
 if(n.n)pb.append(kv("Class",n.tier+" ("+n.type+")"),kv(n.kind==="wf"?"Run id":"Agent id",n.id),kv("Sent by",by[n.parent]?name(by[n.parent]):"GUILD MASTER"));
 if(n.phase)pb.append(kv("Phase",n.phase));
@@ -267,12 +269,14 @@ if(n.limit)pb.append(kv("Tool limit","warned at "+n.limit+", ended at "+n.tools)
 if(n.cont)pb.append(kv("Continues",by[n.cont]?name(by[n.cont]):n.cont));
 if(n.id==="main"&&d.denials)pb.append(kv("Guard blocks",String(d.denials)));
 if(n.flags.length){pb.append(el("h3",null,"FLAGS"));n.flags.forEach(function(f){var r=el("div","kv"),k=el("b",info(f)?null:"bad",f);r.append(k,el("span",null,FLAGTXT[f]||FLAGTXT.ctx));pb.append(r)})}
-if(n.prompt)pb.append(el("h3",null,"ORDERS (FULL PROMPT)"),el("pre",null,n.prompt))}
+var pr=n.prompt||PR[n.id];
+if(pr)pb.append(el("h3",null,"ORDERS (FULL PROMPT)"),el("pre",null,pr));
+else if(n.brief)pb.append(el("h3",null,"ORDERS (FULL PROMPT)"),el("p","mut","Loading…"))}
 
 function legend(){var dl=$("legend");
 [[HERO.main,"Guild master = the main session. Heroes by class: knight executor, rogue scanner, sage planner, bard writer, barbarian runner, viking other."],
 [HERO.workflow,"Treasure run = a Workflow run (a mimic while it runs)."],[HERO.ghost,"Ghost = berserk: ignored the tool limit."],
-[ICON.heart,"Hearts = tool budget: 5 hearts is the tool-call limit; one is lost per fifth used."],[ICON.coin,"Gold = input-equivalent tokens (input 1, cache write 1.25, cache read 0.1, output 5)."],
+[ICON.heart,"Hearts (only when a tool limit is configured) = tool budget: 5 hearts is the tool-call limit; one is lost per fifth used."],[ICON.coin,"Gold = input-equivalent tokens (input 1, cache write 1.25, cache read 0.1, output 5)."],
 [ICON.key,"Key = a handoff: TO #6 on the one that stopped, FROM #4 on the one that continues. KEY DROPPED = nobody continued."],
 [ICON.skull,"Skull chips are issues; grey chips are info. Name colour = model family that ran; 'x?/y?' = requested, not seen running yet."]]
 .forEach(function(x){var t=el("dt");t.append(spr(x[0],2));dl.append(t,el("dd",null,x[1]))})}
@@ -313,7 +317,12 @@ function march(){var m=$("march"),cast=["main","executor","scanner","plan","writ
 cast.forEach(function(k,i){var w=el("span","walker");w.style.animationDelay=(i*0.9)+"s";w.append(spr(HERO[k],3,"hero run"));m.append(w)});
 var foe=el("span","walker");foe.style.animationDelay=(cast.length*0.9+0.6)+"s";foe.append(spr(["td",0,9],3,"hero run"));m.append(foe)}
 
-window.TL=function(d){if(!d||typeof d!=="object")return;if(INDEX){idx=d;drawLobby()}else render(d)};
+window.TL=function(d){if(!d||typeof d!=="object")return;if(INDEX){idx=d;drawLobby();return}
+if(cur&&cur.id===d.id&&cur.now===d.now&&!d.prun&&!d.agents.some(function(a){return a.running}))return;  /* same build, nothing ticking */
+render(d)};
+window.TLP=function(p){if(p&&cur&&p.id===cur.id&&p.prompts){PR=p.prompts;if(sel)fill()}};
+function loadPrompts(){if(prBusy||INDEX)return;prBusy=true;var sc=document.createElement("script");sc.src=SID+".prompts.js?t="+Date.now();
+sc.onload=sc.onerror=function(){prBusy=false;sc.remove()};document.head.appendChild(sc)}
 function poll(){var sc=document.createElement("script");sc.src=DATA+"?t="+Date.now();sc.onload=sc.onerror=function(){sc.remove()};document.head.appendChild(sc)}
 setInterval(function(){if(live&&document.visibilityState==="visible")poll()},3000);
 $("graph").addEventListener("click",function(e){var c=e.target.closest(".card");if(c)openPanel(c.dataset.id)});
