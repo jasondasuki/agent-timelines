@@ -41,10 +41,12 @@ assert.strictEqual(by.n5.idx, idx('ghost'), 'berserk (ignored-limit) is a ghost,
 assert.strictEqual(by.n4.idx, idx('runner'));
 assert.strictEqual(by.n8.kind, 'wf'); assert.strictEqual(by.n8.idx, idx('wfrun'), 'running workflow is a mimic');
 assert(by.n10.failed && by.n10.idx === idx('workflow'), 'failed workflow stays a closed chest');
+assert(by.n5.failed && !by.n1.failed, 'only the berserk hero is flagged for the green light');
 
-// wandering: the free area holds no prop (rug aside), door, corridor or the fallen enemy; a long walk never leaves it
-var blocked = {}, rug = {};
-d.deco.forEach(function (e) { if (e.sheet === 'ob' && e.idx >= 629 && e.idx <= 631) rug[e.x + ',' + e.y] = 1; else blocked[e.x + ',' + e.y] = 1; });
+// wandering: the free area holds no prop, door, corridor or the fallen enemy; a long walk never leaves it
+var blocked = {}, rug = {}, g = d.rooms[0].rug;
+d.deco.forEach(function (e) { blocked[e.x + ',' + e.y] = 1; });
+for (var gy = g.y; gy < g.y + g.h; gy++) for (var gx = g.x; gx < g.x + g.w; gx++) rug[gx + ',' + gy] = 1;
 acts.forEach(function (a) {
   if (!a.free) return;
   Object.keys(a.free).forEach(function (k) { assert(!blocked[k] && !pathc[k], a.id + ' free cell ' + k + ' is clear'); });
@@ -75,6 +77,27 @@ var acts2 = A.place('s1', d, nodes); A.stamp(acts2, mem, 5000);
 assert.strictEqual(acts2.filter(function (a) { return a.id === 'n3'; })[0].since, 5000);
 assert.strictEqual(acts2.filter(function (a) { return a.id === 'n1'; })[0].since, -Infinity);
 console.log('ok');
+
+// a hero spawned while watching walks in: from its parent's room, or with the key from the room it continues
+var more = nodes.concat([{ id: 'n16', parent: 'n3', tier: 'executor', running: true, flags: [] }, { id: 'n17', parent: 'main', cont: 'n7', tier: 'executor', running: true, flags: [] }]);
+var d3 = D.generate('s1', more), acts3 = A.place('s1', d3, more), by3 = {}, open3 = {};
+acts3.forEach(function (a) { by3[a.id] = a; });
+A.stamp(acts3, mem, 9000);
+assert(by3.n16.trip && by3.n17.trip && !by3.n1.trip && !by3.main.trip, 'only the new heroes walk in');
+assert.deepStrictEqual(by3.n16.from, [by3.n3.x, by3.n3.y]); assert(!by3.n16.key, 'a plain spawn starts at its parent');
+assert.deepStrictEqual(by3.n17.from, [by3.n7.x, by3.n7.y]); assert(by3.n17.key, 'a continuation starts where the handoff was, with the key');
+d3.deco.forEach(function (e) { if (e.solid) open3[e.x + ',' + e.y] = 1; });
+[by3.n16, by3.n17].forEach(function (a) {
+  var c = A.trip(d3, a), last = a.from;
+  assert(c.length > 3, a.id + ' has a way in');
+  assert.deepStrictEqual(c[c.length - 1], [a.x, a.y], a.id + ' ends at home');
+  c.forEach(function (s) {
+    assert.strictEqual(Math.abs(s[0] - last[0]) + Math.abs(s[1] - last[1]), 1, 'one cell per step');
+    assert(D.T.WALK.indexOf(d3.tiles[s[1] - d3.oy][s[0] - d3.ox]) >= 0 && !open3[s[0] + ',' + s[1]], 'walks on open floor only');
+    last = s;
+  });
+});
+console.log('ok (walking in)');
 
 // the guild master keeps one walk through idle <-> cast (no snapping home); a hero's new state gets a fresh walk
 var m2 = {}, g1 = A.place('s1', d, [{ id: 'main', running: false }])[0];
