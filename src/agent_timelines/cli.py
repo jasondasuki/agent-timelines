@@ -1,5 +1,5 @@
 """agent-timelines: install the Claude Code hooks, build session data, serve the dashboard."""
-import argparse, functools, glob, http.server, json, os, shlex, shutil, subprocess, sys, tempfile, time, webbrowser
+import argparse, functools, glob, http.server, json, os, shlex, shutil, subprocess, sys, tempfile, time, urllib.parse, webbrowser
 from datetime import datetime
 
 from . import timeline as tl
@@ -119,11 +119,32 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def send_head(self):
+        """Serve only same-origin requests: the files hold prompt text and are scripts any other site could include."""
+        port = self.server.server_address[1]
+        ours = ("127.0.0.1:%d" % port, "localhost:%d" % port)
+        ref = self.headers.get("Referer") or ""
+        # a top-level page load (typed URL, link from another site, tool-driven browser) exposes nothing: only scripts and fetches could read the data
+        nav = self.headers.get("Sec-Fetch-Mode") == "navigate" and self.headers.get("Sec-Fetch-Dest") == "document"
+        if self.headers.get("Host") not in ours or not nav and (self.headers.get("Sec-Fetch-Site") not in (None, "same-origin", "none")
+                                                                or ref and urllib.parse.urlsplit(ref).netloc not in ours):
+            self.send_error(403, "cross-site request refused")
+            return None
+        return super().send_head()
+
+    def end_headers(self):
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        super().end_headers()
+
+
+def make_server(port, directory=None):
+    # 127.0.0.1 only: the pages hold prompt text from your sessions
+    return http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(Quiet, directory=directory or tl.OUT_DIR))
+
 
 def serve(a):
     tl.build_index()
-    # 127.0.0.1 only: the pages hold prompt text from your sessions
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), functools.partial(Quiet, directory=tl.OUT_DIR))
+    srv = make_server(a.port)
     url = "http://127.0.0.1:%d/index.html" % srv.server_address[1]
     print("serving", tl.OUT_DIR, "at", url, "(ctrl-c to stop)")
     if not a.no_browser:
