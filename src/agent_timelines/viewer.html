@@ -396,6 +396,9 @@ setInterval(function(){if(live&&document.visibilityState==="visible")poll()},300
 $("graph").addEventListener("click",function(e){var c=e.target.closest(".card");if(c)openPanel(c.dataset.id)});
 $("graph").addEventListener("keydown",function(e){var c=e.target.closest(".card");if(c&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openPanel(c.dataset.id)}});
 $("px").addEventListener("click",closePanel);
+/* a click outside the panel closes it, unless that click opened another hero (sel changed) or ended a text selection */
+var selWas=null;document.addEventListener("click",function(e){selWas=e.target.closest("#panel")?null:sel},true);  /* judged in capture: a re-render may detach the target */
+document.addEventListener("click",function(){if(sel!==null&&sel===selWas&&!String(getSelection()))closePanel()});
 document.addEventListener("keydown",function(e){if(e.key==="Escape")closePanel()});
 function showTip(e){var b=e.target.closest&&e.target.closest(".q"),t=$("tip");if(!b){t.hidden=true;return}
 t.replaceChildren(el("b",null,b.dataset.g),document.createTextNode(" = "+b.dataset.r));t.hidden=false;
