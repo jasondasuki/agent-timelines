@@ -1,34 +1,51 @@
 # agent-timelines
 
-[![CI](https://github.com/jasondasuki/agent-timelines/actions/workflows/ci.yml/badge.svg)](https://github.com/jasondasuki/agent-timelines/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/jasondasuki/agent-timelines/actions/workflows/ci.yml/badge.svg)](https://github.com/jasondasuki/agent-timelines/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jasondasuki/agent-timelines/blob/main/LICENSE)
 
 A pixel-art dashboard for Claude Code sessions. It shows which agent spawned which, the model and effort
-requested vs. what actually ran, tool calls, weighted token cost, handoffs and Workflow runs, live while the
+requested vs. what actually ran, tool calls, weighted token cost and dollars, handoffs and Workflow runs, live while the
 session works. Everything is read from your local transcripts; nothing leaves your machine.
 
-![Chart view: the delegation tree as a party of heroes, with one hero's detail panel open](docs/chart.jpg)
+![Chart view: the delegation tree as a party of heroes, with one hero's detail panel open](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/chart.jpg)
 
-- **Lobby**: every recent session as a retro game-server list (live dungeons + hall of records).
+- **Lobby**: your 200 most recent sessions as a retro game-server list (live dungeons + hall of records), with search, a project filter and
+  paging (`/` focuses the search box, left/right change the page).
 - **Chart view**: the delegation tree as a party of heroes, with flags for rule breaks (no model set,
   model mismatch, ignored tool limit, unanswered handoff, …).
+  Each card shows the agent's top tools and the start of its final reply; the detail panel lists every tool and the full report
+  (a running agent shows what it is saying now).
+- **Timeline view**: one bar per agent on a shared clock, rows in party-tree order, so you can see who ran when and what overlapped.
+  Running agents get a striped bar; zoom with + and -.
 - **Map view**: the same session as a procedurally generated dungeon. The main session is the guild master
   in the guild hall; each agent has its own room and fights an enemy while it works, then celebrates.
 
-![Lobby: live dungeons and the hall of records](docs/lobby.jpg)
-![Map view: a procedurally generated dungeon with one room per agent](docs/map.jpg)
+![Lobby: live dungeons and the hall of records](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/lobby.jpg)
+![Map view: a procedurally generated dungeon with one room per agent](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/map.jpg)
 
 (The screenshots show a synthetic demo session.)
 
 ## Install
 
-Needs Python 3.9+ and [uv](https://docs.astral.sh/uv/) (or pipx). No other dependencies. Runs on macOS and Linux; Windows is not supported.
+Needs Python 3.9+ on macOS or Linux (Windows is not supported). No other dependencies. Use one of the two options, not both.
+
+**Option A: the command-line tool from PyPI** (needs [uv](https://docs.astral.sh/uv/) or pipx)
 
 ```sh
-uv tool install git+https://github.com/jasondasuki/agent-timelines   # or: pipx install git+https://...
+uv tool install agent-timelines   # or: pipx install agent-timelines
 agent-timelines install    # adds 6 hooks to ~/.claude/settings.json (writes a backup next to it first)
 agent-timelines rebuild    # optional: fills the lobby with your sessions from the last 30 days
 agent-timelines serve      # opens http://127.0.0.1:8765/index.html (localhost only)
 ```
+
+**Option B: the Claude Code plugin** (no pip, no settings.json edit; the hooks come with the plugin)
+
+```sh
+claude plugin marketplace add jasondasuki/agent-timelines
+claude plugin install agent-timelines@agent-timelines
+```
+
+Then ask for the dashboard with `/agent-timelines:dashboard`. The plugin's hooks run `python3` from your PATH, so Python 3.9+ must be there.
+If `agent-timelines install` hooks are also in settings.json, the plugin's hooks stay quiet so nothing is built twice.
 
 Start or continue a Claude Code session; it appears in the lobby on its first hook event.
 
@@ -58,11 +75,13 @@ The pages hold prompt text from your sessions, which is why `serve` binds to loc
   "tool_limit": 50,
   "brief_limit": 8000,
   "retain_days": 30,
+  "lobby_limit": 200,
   "handover_dir": "~/.claude/handovers",
   "agents_dir": "~/.claude/agents",
   "guard_text": "Main session does not execute",
   "tiers": {"Explore": "scanner", "Plan": "plan", "general-purpose": "executor"},
-  "rules": {"no-model": true, "no-effort": true}
+  "rules": {"no-model": true, "no-effort": true},
+  "prices": {"gpt-6": {"in": 1, "out": 2}}
 }
 ```
 
@@ -74,11 +93,24 @@ turn them on if your setup requires every spawn to name a model and effort. The 
 `frontmatter`, `model-mismatch`, `effort-mismatch`, `ctx` (the context-size flag), `handoff`, `tool-limit`, `ignored-limit`, `orphan`
 and `handoff-not-continued`; an unknown name is an error.
 
+`prices` adds or changes entries of the built-in price table (USD per million tokens; the table is dated, see `PRICES_ASOF` in `timeline.py`).
+The key is a model id prefix without `claude-`, the longest matching key wins, and the columns are `in`, `cc5` (5-minute cache write),
+`cc1` (1-hour cache write), `cr` (cache read), `out` and an optional `over` (`[prompt tokens, multiplier]`); a missing column counts as 0.
+Entries are merged per model, so you only list what you add or change. A model with no price is shown as unpriced (`$0.00+` on its card),
+never guessed.
+
+### Cost
+
+Cost is computed per message from the full model id and the usage recorded in the transcript, at Anthropic first-party API list prices
+([pricing page](https://platform.claude.com/docs/en/about-claude/pricing), table dated 2026-11-10). It is what those tokens would cost through the
+API; a subscription plan is not billed per token. Not modelled: the 1.1x US-only `inference_geo` surcharge (the transcript does not say whether it
+applied), batch discounts, Bedrock and Vertex prices, web-search and other server-tool fees. Gold is the same tokens weighted by cost, as before.
+
 ## Development
 
 ```sh
 python3 tests/test_timeline.py && python3 tests/test_cli.py   # Python
-node tests/test_dungeon.js && node tests/test_actors.js       # map view (Node 18+)
+node tests/test_dungeon.js && node tests/test_actors.js && node tests/test_lobby.js && node tests/test_gantt.js   # viewer scripts (Node 18+)
 open dev/dungeon-demo.html                                     # dungeon playground: agents, working, reset
 ```
 
@@ -91,4 +123,4 @@ Details in `src/agent_timelines/assets/LICENSES.txt`.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Contributions welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+MIT, see [LICENSE](https://github.com/jasondasuki/agent-timelines/blob/main/LICENSE). Contributions welcome: see [CONTRIBUTING.md](https://github.com/jasondasuki/agent-timelines/blob/main/CONTRIBUTING.md). Security reports: [SECURITY.md](https://github.com/jasondasuki/agent-timelines/blob/main/SECURITY.md).

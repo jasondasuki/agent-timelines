@@ -1,20 +1,25 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-timelines"
-version = "0.1.0"
+version = "0.2.0"
 description = "Live delegation graph of Claude Code sessions and their subagents"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE", "src/agent_timelines/assets/LICENSES.txt"]
 authors = [{ name = "jasondasuki" }]
 requires-python = ">=3.9"
 dependencies = []
 keywords = ["claude-code", "claude", "agents", "subagents", "dashboard", "observability", "pixel-art"]
 classifiers = [
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Operating System :: MacOS",
   "Operating System :: POSIX :: Linux",
   "Environment :: Console",
@@ -24,6 +29,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/jasondasuki/agent-timelines"
+Source = "https://github.com/jasondasuki/agent-timelines"
 Issues = "https://github.com/jasondasuki/agent-timelines/issues"
 
 [project.scripts]

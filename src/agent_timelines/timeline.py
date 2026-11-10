@@ -17,15 +17,44 @@ FLAG_NAMES = ("no-model", "no-effort", "auto-filled", "frontmatter", "model-mism
 RULES = {"no-model": False, "no-effort": False}  # flag -> shown; a flag not listed is on. "ctx" stands for ctx-<N>k
 BRIEF_LIMIT = 8000  # a spawn hook refusing longer briefs answers "Brief is N chars (>BRIEF_LIMIT)"
 RETAIN_DAYS = 30
+LOBBY_LIMIT = 200  # sessions in the lobby index (about 0.5 KB each; the page polls it every 3 s)
 FAMILIES = ("fable", "mythos", "opus", "sonnet", "haiku")  # model families with their own colour; anything else is "other"
 WEIGHTS = {"in": 1, "cc": 1.25, "cr": 0.1, "out": 5}  # cost per token, input = 1
+PRICES_ASOF = "2026-11-10"
+# USD per million tokens: input, 5-minute cache write, 1-hour cache write, cache read, output. Key = model id prefix after "claude-".
+# Anthropic first-party API list prices (platform.claude.com/docs/en/about-claude/pricing). "over": [prompt tokens, multiplier] for a request above that size.
+PRICES = {
+    "fable-5-2": {"in": 8, "cc5": 10, "cc1": 16, "cr": 0.20, "out": 40},
+    "mythos-5-2": {"in": 8, "cc5": 10, "cc1": 16, "cr": 0.20, "out": 40},
+    "fable-5-1": {"in": 10, "cc5": 12.5, "cc1": 20, "cr": 0.25, "out": 50},
+    "mythos-5-1": {"in": 10, "cc5": 12.5, "cc1": 20, "cr": 0.25, "out": 50},
+    "fable-5": {"in": 10, "cc5": 12.5, "cc1": 20, "cr": 1, "out": 50},
+    "mythos-5": {"in": 10, "cc5": 12.5, "cc1": 20, "cr": 1, "out": 50},
+    "opus-5-5": {"in": 4, "cc5": 5, "cc1": 8, "cr": 0.20, "out": 20},
+    "opus-5": {"in": 5, "cc5": 6.25, "cc1": 10, "cr": 0.50, "out": 25},
+    "opus-4-8": {"in": 5, "cc5": 6.25, "cc1": 10, "cr": 0.50, "out": 25},
+    "opus-4-7": {"in": 5, "cc5": 6.25, "cc1": 10, "cr": 0.50, "out": 25},
+    "opus-4-6": {"in": 5, "cc5": 6.25, "cc1": 10, "cr": 0.50, "out": 25},
+    "opus-4-5": {"in": 5, "cc5": 6.25, "cc1": 10, "cr": 0.50, "out": 25},
+    "opus-4-1": {"in": 15, "cc5": 18.75, "cc1": 30, "cr": 1.50, "out": 75},
+    "opus-4": {"in": 15, "cc5": 18.75, "cc1": 30, "cr": 1.50, "out": 75},
+    "sonnet-5-5": {"in": 2, "cc5": 2.5, "cc1": 4, "cr": 0.10, "out": 10},
+    "sonnet-5": {"in": 2, "cc5": 2.5, "cc1": 4, "cr": 0.20, "out": 10},
+    "sonnet-4-6": {"in": 3, "cc5": 3.75, "cc1": 6, "cr": 0.30, "out": 15},
+    "sonnet-4-5": {"in": 3, "cc5": 3.75, "cc1": 6, "cr": 0.30, "out": 15},
+    "sonnet-4": {"in": 3, "cc5": 3.75, "cc1": 6, "cr": 0.30, "out": 15},
+    "haiku-5-5": {"in": 0.10, "cc5": 0.125, "cc1": 0.20, "cr": 0.01, "out": 0.50, "over": [100000, 5]},
+    "haiku-4-5": {"in": 1, "cc5": 1.25, "cc1": 2, "cr": 0.10, "out": 5},
+}
+PRICE_COLS = ("in", "cc5", "cc1", "cr", "out", "over")
+FAST_MULT = 2  # usage.speed == "fast": every price column doubles
 STALE = 600  # s: an unfinished agent whose transcript is idle this long is dead, not running
 LIVE_AGE = 3600  # s: a session with no activity this long is ended
-ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js")  # sprites + font (assets/LICENSES.txt) + map view scripts
+ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js", "lobby.js", "gantt.js")  # sprites + font (assets/LICENSES.txt) + view scripts
 CONFIG = os.path.expanduser(os.environ.get("AGENT_TIMELINES_CONFIG") or "~/.config/agent-timelines/config.json")
 KEYS = {"out_dir": "OUT_DIR", "agents_dir": "AGENTS_DIR", "handover_dir": "HANDOVER_DIR", "tiers": "TIERS", "guard_text": "DENY",
-        "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS",
-        "rules": "RULES"}
+        "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS", "lobby_limit": "LOBBY_LIMIT",
+        "rules": "RULES", "prices": "PRICES"}
 
 
 def load_config(path=CONFIG):
@@ -44,6 +73,15 @@ def load_config(path=CONFIG):
             if unknown:
                 sys.exit("%s: unknown rules %s (known: %s)" % (path, sorted(unknown), sorted(FLAG_NAMES)))
             RULES.update(v)  # merged, so naming one rule keeps the defaults of the others
+        elif k == "prices":
+            num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+            for mid, e in (v.items() if isinstance(v, dict) else [("prices", v)]):
+                badk = sorted(set(e) - set(PRICE_COLS)) if isinstance(e, dict) else [mid]
+                badk += [c for c, x in (e.items() if isinstance(e, dict) else ()) if c in PRICE_COLS and not (
+                    (isinstance(x, list) and len(x) == 2 and all(map(num, x))) if c == "over" else num(x))]
+                if badk:
+                    sys.exit("%s: bad prices entry %r, key(s) %s (known: %s, numbers only; over = [tokens, multiplier])" % (path, mid, badk, list(PRICE_COLS)))
+            PRICES.update(v)  # merged per model, so one gateway model or one changed price needs no restated table
         else:
             globals()[KEYS[k]] = os.path.expanduser(v) if k.endswith("_dir") else v
 
@@ -80,6 +118,22 @@ def top(counts):
 def family(model):
     m = (model or "").lower()
     return next((f for f in FAMILIES if f in m), "other")
+
+
+def price_of(model):
+    """The PRICES entry for a model id: the longest key that prefixes the id (so opus-5-5 beats opus-5), else None. Never guesses."""
+    m = (model or "").lower().rsplit("/", 1)[-1]
+    forms = [m] + [m[m.index(f):] for f in FAMILIES if f in m]  # claude-opus-5-5, us.anthropic.claude-sonnet-4-5-2025...-v1:0
+    best = max((k for k in PRICES if any(x.startswith(k) for x in forms)), key=len, default=None)
+    return PRICES[best] if best else None
+
+
+def usd_of(p, c, c1, fast):
+    """Cost of one message with price entry p; c = in/cc/cr/out counts, c1 = the 1-hour part of cc."""
+    x = (c["in"] * p.get("in", 0) + (c["cc"] - c1) * p.get("cc5", 0) + c1 * p.get("cc1", 0) + c["cr"] * p.get("cr", 0) + c["out"] * p.get("out", 0)) / 1e6
+    if p.get("over") and c["in"] + c["cc"] + c["cr"] > p["over"][0]:
+        x *= p["over"][1]
+    return x * (FAST_MULT if fast else 1)
 
 
 def ran(model, effort, actual, actual_effort):
@@ -150,7 +204,8 @@ def read_jsonl(path, errors):
 def scan(lines):
     """Facts common to main and subagent transcripts."""
     r = {"t0": None, "t1": None, "tools": 0, "spawns": {}, "tok": {}, "peak": 0, "models": {}, "efforts": {}, "last_text": "",
-         "denials": [], "refused": [], "cwd": None, "final": False, "limit_hits": [], "wf": []}
+         "denials": [], "refused": [], "cwd": None, "final": False, "limit_hits": [], "wf": [], "by_model": {}, "usd": 0.0, "unpriced": set(),
+         "tool_names": {}, "reply": ""}
     seen, usage, hb, wfu = set(), {}, set(), {}  # hb: SubagentHandback tool_use ids; wfu: Workflow tool_use id -> launch time
     for d in lines:
         t = ts(d.get("timestamp"))
@@ -178,23 +233,29 @@ def scan(lines):
                     r["efforts"][d["effort"]] = r["efforts"].get(d["effort"], 0) + 1
             if isinstance(msg.get("usage"), dict):
                 u = msg["usage"]  # streamed lines repeat a message id; keep the last
+                cc = u.get("cache_creation")  # {ephemeral_1h_input_tokens, ephemeral_5m_input_tokens}; missing = all 5-minute writes
                 usage[msg.get("id") or d.get("uuid")] = (family(m), {k: u.get(f) or 0 for k, f in (
-                    ("in", "input_tokens"), ("cc", "cache_creation_input_tokens"), ("cr", "cache_read_input_tokens"), ("out", "output_tokens"))})
+                    ("in", "input_tokens"), ("cc", "cache_creation_input_tokens"), ("cr", "cache_read_input_tokens"), ("out", "output_tokens"))},
+                    m or "?", (cc.get("ephemeral_1h_input_tokens") or 0) if isinstance(cc, dict) else 0, u.get("speed") == "fast")
             for b in content if isinstance(content, list) else []:
                 if not isinstance(b, dict):
                     continue
                 if b.get("type") == "tool_use" and b.get("name") == "SubagentHandback":
                     hb.add(b.get("id"))
+                    r["reply"] = text_of((b.get("input") or {}).get("message"))
                     r["final"] = True  # stop_reason is usually null on this line
                 if b.get("type") == "tool_use" and b.get("id") not in seen:
                     seen.add(b.get("id"))
                     r["tools"] += 1
+                    nm = b.get("name") or "?"
+                    r["tool_names"][nm] = r["tool_names"].get(nm, 0) + 1
                     if b.get("name") == "Workflow":
                         wfu[b.get("id")] = t
                     if b.get("name") == "Agent":
                         r["spawns"][b.get("id")] = b.get("input") or {}
                 elif b.get("type") == "text" and b["text"].strip():
                     r["last_text"] = b["text"]
+                    r["reply"] = ""  # a handback's message is stale once the agent speaks again
         elif d.get("type") == "user" and isinstance(content, list):
             for b in content:
                 if isinstance(b, dict) and b.get("type") == "tool_result":
@@ -208,10 +269,23 @@ def scan(lines):
                         br = BRIEF_RE.search(s)
                         if br:
                             r["refused"].append((t, int(br.group(1))))
-    for fam, c in usage.values():
+    for fam, c, m, c1, fast in usage.values():
         add_tok(r["tok"].setdefault(fam, dict.fromkeys(WEIGHTS, 0)), c)
         r["peak"] = max(r["peak"], c["in"] + c["cc"] + c["cr"])
+        bm, p = r["by_model"].setdefault(m, dict.fromkeys(WEIGHTS, 0)), price_of(m)
+        add_tok(bm, c)
+        bm.setdefault("usd", 0.0)
+        if p:
+            x = usd_of(p, c, min(c1, c["cc"]), fast)
+            bm["usd"] += x
+            r["usd"] += x
+        elif any(c.values()):
+            r["unpriced"].add(m)
     return r
+
+
+def tools_by(counts):
+    return [list(kv) for kv in sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))]
 
 
 def agent(aid, m, s, first, wf, age, inp, now, closed, ended):
@@ -238,12 +312,13 @@ def agent(aid, m, s, first, wf, age, inp, now, closed, ended):
         ("tool-limit", limit),
         ("ignored-limit", limit and not handoff and not running and s["tools"] > limit[1])) if on]
     prompt = inp.get("prompt") or first
+    reply = s["reply"] or s["last_text"]  # a running agent's latest text doubles as a progress line
     tok = total_tok(s["tok"])
     return {"id": aid, "parent": wf, "type": typ, "tier": TIERS.get(typ) or ("executor" if "sonnet" in (model or actual or "").lower() else "other"),
             "desc": m.get("description") or inp.get("description") or "", "req": "%s/%s" % (model or "-", effort or "-"),
             "ran": ran(model, effort, actual, actual_effort), "fam": family(actual or model), "running": running,
             "start": s["t0"] or (now if running else None), "end": now if running else s["t1"], "tools": s["tools"],
-            "tokens": weighted(tok), "tok": tok, "peak": s["peak"], "brief": len(prompt), "flags": flags, "handoff": handoff, "cont": None,
+            "tokens": weighted(tok), "tok": tok, "usd": round(s["usd"], 6), "unpriced": bool(s["unpriced"]), "toolsBy": tools_by(s["tool_names"]), "reply": reply, "replyLen": len(reply), "peak": s["peak"], "brief": len(prompt), "flags": flags, "handoff": handoff, "cont": None,
             "limit": limit[1] if limit else None, "exempt": exempt, "prompt": prompt, "phase": str(m.get("workflowPhase") or "")[:40] if wf else "",
             "_s": s, "_age": age, "_limit_t": limit[0] if limit else None, "_owner": m.get("toolUseId")}
 
@@ -267,6 +342,11 @@ def workflow(rid, w, kids, base, now, ended, errors):
     tok = dict.fromkeys(WEIGHTS, 0)
     for a in kids:
         add_tok(tok, a["tok"])
+    usd = round(sum(a["usd"] for a in kids), 6)
+    names = {}
+    for a in kids:
+        for name, k in a["toolsBy"]:
+            names[name] = names.get(name, 0) + k
     states = {}
     for x in j.get("workflowProgress") or []:
         if isinstance(x, dict) and x.get("type") == "workflow_agent":
@@ -278,7 +358,7 @@ def workflow(rid, w, kids, base, now, ended, errors):
             "desc": str(j.get("summary") or res.get("summary") or name), "req": "-", "ran": "%s · %d agent%s" % (status, n, "" if n == 1 else "s"),
             "fam": "wf", "running": running, "start": start, "end": now if running else ts(j.get("timestamp")) or (now - idle if ages else start),
             "tools": j["totalToolCalls"] if isinstance(j.get("totalToolCalls"), int) else sum(a["tools"] for a in kids),
-            "tokens": weighted(tok), "tok": tok, "peak": 0, "brief": 0, "flags": [], "handoff": None, "cont": None, "limit": None, "exempt": True,
+            "tokens": weighted(tok), "tok": tok, "usd": usd, "unpriced": any(a["unpriced"] for a in kids), "toolsBy": tools_by(names), "reply": "", "replyLen": 0, "peak": 0, "brief": 0, "flags": [], "handoff": None, "cont": None, "limit": None, "exempt": True,
             "prompt": "", "phase": "", "wf": {"name": name, "status": status, "agents": n, "states": states,
                                               "state": "running" if running else "done" if j.get("status") == "completed" else "failed",
                                               "phases": [str(x.get("title")) for x in j.get("phases") or [] if isinstance(x, dict)],
@@ -364,6 +444,17 @@ def load(path, now=None, closed=(), ended=False, event=None):
     for sc in [main] + [a["_s"] for a in agents]:
         for f, c in sc["tok"].items():
             add_tok(ftok[f], c)
+    bm, unpriced = {}, set()  # cost per model id, planner and agents together; workflow nodes add nothing (their agents are counted)
+    for sc in [main] + [a["_s"] for a in agents]:
+        unpriced |= sc["unpriced"]
+        for mid, c in sc["by_model"].items():
+            e = bm.setdefault(mid, dict.fromkeys(WEIGHTS, 0))
+            add_tok(e, c)
+            e["usd"] = e.get("usd", 0.0) + c["usd"]
+    musd = round(main["usd"], 6)
+    cost = {"total": round(musd + sum(a["usd"] for a in agents), 6), "asof": PRICES_ASOF, "unpriced": sorted(unpriced),
+            "models": sorted(({"model": mid, "fam": family(mid), "tok": {k: e[k] for k in WEIGHTS}, "usd": round(e["usd"], 6)} for mid, e in bm.items()),
+                             key=lambda x: (-x["usd"], x["model"]))}
     mage = now - os.path.getmtime(path) if os.path.exists(path) else 0
     mrun = not ended and event != "Stop" and (event == "UserPromptSubmit" or (not main["final"] and mage < STALE))
     activity = max([main["t1"] or 0] + [a["end"] or 0 for a in nodes])  # running nodes end at now
@@ -372,10 +463,11 @@ def load(path, now=None, closed=(), ended=False, event=None):
         for k in [k for k in a if k[0] == "_"]:
             del a[k]
     mtok = total_tok(main["tok"])
+    mreply = main["reply"] or main["last_text"]
     return {"id": sid, "cwd": main["cwd"], "status": "ended" if ended or now - activity >= LIVE_AGE else "live", "now": now, "updated": activity,
             "t0": main["t0"], "t1": max(main["t1"] or 0, now) if mrun or any(a["running"] for a in nodes) else main["t1"],
             "planner": ran(None, None, top(main["models"]), top(main["efforts"])) if main["models"] else "?", "pfam": family(top(main["models"])),
-            "prun": mrun, "tools": main["tools"], "tokens": weighted(mtok), "tok": mtok, "peak": main["peak"], "denials": len(main["denials"]),
+            "prun": mrun, "tools": main["tools"], "tokens": weighted(mtok), "tok": mtok, "usd": musd, "unpriced": bool(main["unpriced"]), "toolsBy": tools_by(main["tool_names"]), "reply": mreply, "replyLen": len(mreply), "cost": cost, "peak": main["peak"], "denials": len(main["denials"]),
             "toolLimit": TOOL_LIMIT, "ctxLimit": CTX_LIMIT, "models": {f: weighted(c) for f, c in ftok.items()}, "modelTok": ftok,
             "events": events[-30:], "errors": errors[:5], "agents": nodes}
 
@@ -415,20 +507,20 @@ def summary(d, now):
     den = d.get("denials") or 0
     return {"id": d.get("id"), "cwd": d.get("cwd"), "live": live, "updated": d["updated"], "planner": d.get("planner"),
             "heroes": len(heroes), "running": sum(bool(a.get("running")) for a in heroes) if live else 0, "workflows": len(ags) - len(heroes),
-            "gold": sum((d.get("models") or {}).values()),
+            "gold": sum((d.get("models") or {}).values()), "usd": (d.get("cost") or {}).get("total"),
             "issues": sum(f not in INFO_FLAGS and not f.startswith("ctx-") for a in ags for f in a.get("flags") or []) + (len(den) if isinstance(den, list) else den),
             "party": [[a.get("tier"), a.get("kind"), bool(a.get("running")) and live, "ignored-limit" in (a.get("flags") or [])] for a in ags[:12]],
             "last": ((d.get("events") or [{}])[-1] or {}).get("text", "")}
 
 
 def build_index(out_dir=None, now=None):
-    """index.html (the viewer) and index.data.js (lobby rows for the 30 most recent sessions, newest first), from the <sid>.data.js files.
+    """index.html (the viewer) and index.data.js (lobby rows for the LOBBY_LIMIT most recent sessions, newest first), from the <sid>.data.js files.
     shortcut: no lock, concurrent hooks each rebuild from all data files and the last writer is at most one event behind; add an fcntl lock if it shows."""
     out_dir, now = out_dir or OUT_DIR, now or time.time()
     os.makedirs(out_dir, exist_ok=True)
     # "ctxLimit" marks the current data format: files from the pre-package script are skipped (agent-timelines rebuild redoes them)
     side = [d for d in (read_data(p) for p in glob.glob(os.path.join(out_dir, "*.data.js")) if not p.endswith("index.data.js")) if d and "ctxLimit" in d]
-    rows = [summary(d, now) for d in sorted(side, key=lambda d: d["updated"], reverse=True)[:30]]
+    rows = [summary(d, now) for d in sorted(side, key=lambda d: d["updated"], reverse=True)[:LOBBY_LIMIT]]
     write_atomic(os.path.join(out_dir, "index.data.js"), "TL(%s);\n" % js({"index": True, "now": now, "sessions": rows}))
     here = os.path.dirname(__file__)
     with open(os.path.join(here, "viewer.html"), encoding="utf-8") as f:
@@ -465,13 +557,17 @@ def closed_ids(out_dir, sid, event=None, aid=None):
 
 
 def publish(d, out_dir=None, closed=()):
-    """Write <sid>.data.js (prompts emptied) and <sid>.prompts.js (the prompts), rebuild the index, drop expired sessions; returns the session's page."""
+    """Write <sid>.data.js (prompts emptied, replies cut to a teaser) and <sid>.prompts.js (the prompts and full replies), rebuild the index, drop expired sessions; returns the session's page."""
     out_dir = out_dir or OUT_DIR
     os.makedirs(out_dir, exist_ok=True)
     prompts = {a["id"]: a["prompt"] for a in d["agents"] if a.get("prompt")}
-    slim = dict(d, agents=[dict(a, prompt="") for a in d["agents"]], closed=sorted(closed))
+    replies = {a["id"]: a["reply"] for a in d["agents"] if a.get("reply")}
+    if d.get("reply"):
+        replies["main"] = d["reply"]
+    short = lambda t: " ".join((t or "").split())[:160]  # the data file carries a one-line teaser; replyLen keeps the real length
+    slim = dict(d, reply=short(d.get("reply")), agents=[dict(a, prompt="", reply=short(a.get("reply"))) for a in d["agents"]], closed=sorted(closed))
     # prompts first: the data file must never point at prompts that are not on disk yet
-    write_atomic(os.path.join(out_dir, d["id"] + ".prompts.js"), "TLP(%s);\n" % js({"id": d["id"], "prompts": prompts}))
+    write_atomic(os.path.join(out_dir, d["id"] + ".prompts.js"), "TLP(%s);\n" % js({"id": d["id"], "prompts": prompts, "replies": replies}))
     write_atomic(os.path.join(out_dir, d["id"] + ".data.js"), "TL(%s);\n" % js(slim))
     build_index(out_dir)
     purge(out_dir, d["id"])

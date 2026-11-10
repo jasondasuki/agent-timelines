@@ -57,6 +57,7 @@ details{margin-top:6px;font-size:8px}summary{cursor:pointer;color:var(--mut)}det
 .tag{display:inline-block;font-size:8px;padding:1px 4px;border:2px solid currentColor;margin-top:2px}
 [data-st=run] .tag{color:var(--run)}[data-st=ok] .tag{color:var(--ok)}[data-st=bad] .tag{color:var(--bad)}[data-st=stop] .tag{color:var(--other)}[data-st=wait] .tag{color:var(--mut)}
 .hero{animation:idle 1.6s steps(1) infinite}[data-st=run] .hero{animation:walk .5s steps(1) infinite}[data-st=bad] .hero{opacity:.75}
+.reply{color:var(--mut)}
 .desc{margin:6px 0 4px;font-size:8px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .row{display:flex;align-items:center;gap:6px;font-size:8px;margin-top:4px;flex-wrap:wrap}
 .row code{font:inherit;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
@@ -77,7 +78,7 @@ details{margin-top:6px;font-size:8px}summary{cursor:pointer;color:var(--mut)}det
 #panel{position:fixed;z-index:9;top:12px;right:12px;bottom:12px;width:min(420px,calc(100vw - 24px));overflow:auto;padding:16px;animation:slide .3s steps(4)}
 #panel[hidden]{display:none}
 #px{position:absolute;top:6px;right:8px;font-size:14px;background:none;border:0;cursor:pointer;padding:4px 8px;color:var(--mut)}
-.kv{display:flex;gap:8px;margin:4px 0;font-size:8px}.kv b{flex:none;width:96px;color:var(--mut);font-weight:400}.kv b.bad{color:var(--bad)}.kv span{min-width:0;overflow-wrap:anywhere}
+.kv{display:flex;gap:8px;margin:4px 0;font-size:8px}.kv b{flex:none;width:96px;color:var(--mut);font-weight:400;overflow-wrap:anywhere}.kv b.bad{color:var(--bad)}.kv span{min-width:0;overflow-wrap:anywhere}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--edge);color:#f4ead5;padding:8px;font:11px/1.5 ui-monospace,Menlo,monospace}
 .q{display:inline-grid;place-items:center;flex:none;width:14px;height:14px;padding:0;margin-left:4px;font-size:8px;line-height:1;color:var(--edge);background:var(--mut);
 border:0;box-shadow:inset -2px -2px 0 rgba(0,0,0,.25);cursor:help;vertical-align:middle}.q:hover,.q:focus-visible{background:var(--gold);outline:none}
@@ -87,6 +88,28 @@ border:0;box-shadow:inset -2px -2px 0 rgba(0,0,0,.25);cursor:help;vertical-align
 #mapbox{display:flex;flex-direction:column;padding:8px;max-height:calc(100vh - 210px);min-height:280px}#mapbox[hidden],#graph[hidden]{display:none}
 .mapbar{display:flex;gap:6px;align-items:center;margin-bottom:8px}.mapbar .mut{font-size:8px;min-width:3em;text-align:center}
 #mapscroll{overflow:auto;flex:1;min-height:0;background:var(--edge)}#map{display:block;image-rendering:pixelated;cursor:pointer}
+/* ---- timeline (Gantt) view: one row per agent, one bar per agent on a shared clock */
+#gantt{--lw:180px;display:flex;flex-direction:column;padding:8px;max-height:calc(100vh - 210px);min-height:280px}
+#gscroll{overflow:auto;flex:1;min-height:0}#ginner{position:relative;min-width:100%}
+.gaxis,.grow{display:grid;grid-template-columns:var(--lw) minmax(0,1fr);align-items:center}
+.gaxis{height:22px;font-size:8px;color:var(--mut);border-bottom:3px solid var(--edge)}
+.gaxis .glabel{height:100%;background:var(--panel)}.gaxis .gtrack{height:100%}
+.gtick{position:absolute;top:5px;transform:translateX(-50%);white-space:nowrap}
+.grow{width:100%;height:26px;padding:0;text-align:left;background:none;border:0;border-bottom:2px dashed var(--panel2);cursor:pointer}
+.glabel{position:sticky;left:0;z-index:2;display:flex;align-items:center;gap:4px;height:100%;padding-left:calc(var(--d,0)*10px + 2px);background:var(--panel);color:var(--fam,var(--fg));font-size:8px;overflow:hidden;white-space:nowrap}
+.glabel span{overflow:hidden;text-overflow:ellipsis}
+.grow:hover,.grow:hover .glabel,.grow.sel .glabel{background:var(--panel2)}
+.grow:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
+.gtrack{position:relative;height:100%;margin-right:36px}
+.gbar{position:absolute;top:7px;height:12px;min-width:4px;background:var(--fam);box-shadow:0 0 0 2px var(--edge)}
+.gbar.run{background:repeating-linear-gradient(90deg,var(--fam) 0 6px,var(--gold) 6px 9px);animation:march .6s steps(3) infinite}
+.grow[data-st=bad] .gbar{box-shadow:0 0 0 2px var(--bad)}
+.grow.sel .gbar{outline:3px solid var(--gold);outline-offset:1px}
+.gbar .spr{position:absolute;left:100%;top:-2px;margin-left:4px}.gbar .spr+.spr{margin-left:22px}
+#gcols{position:absolute;top:0;bottom:0;left:var(--lw);right:36px;pointer-events:none}
+.gline{position:absolute;top:22px;bottom:0;width:2px;background:repeating-linear-gradient(180deg,var(--hi) 0 4px,transparent 4px 8px)}
+.gline.now{background:var(--gold);width:3px}
+@media (max-width:520px){#gantt{--lw:104px}}
 /* ---- lobby: an old-school title screen + server browser */
 body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:30;background:repeating-linear-gradient(rgba(0,0,0,.16) 0 2px,transparent 2px 4px)}
 #lobby{max-width:980px;margin:0 auto;padding:8px 0 24px;text-align:center}
@@ -103,6 +126,12 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 .lrow:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
 .lrow b{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lrow .sid{display:block;color:var(--mut);font-weight:400;margin-top:2px}
 .lrow .n{display:inline-flex;align-items:center;gap:4px}.on-air{color:var(--ok)}.on-air::before{content:"";display:inline-block;width:8px;height:8px;background:var(--ok);margin-right:5px;animation:blink 1s steps(1) infinite}
+.ltools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:8px}
+.ltools input,.ltools select{font:inherit;font-size:8px;color:var(--fg);background:var(--panel2);border:3px solid var(--edge);padding:6px 8px;min-width:0}
+.ltools input{flex:1 1 160px}.ltools select{flex:0 1 220px;max-width:100%}
+.ltools input:focus-visible,.ltools select:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.pager{display:flex;gap:10px;align-items:center;justify-content:center;margin:10px 0 2px;font-size:8px}
+.btn:disabled{opacity:.4;cursor:default}
 .empty{padding:14px 6px;color:var(--mut);font-size:8px;line-height:2}
 #lparty{margin-top:14px;padding:12px 14px;text-align:left;min-height:96px}#lparty .row{gap:4px;margin:8px 0}
 #lparty .hero{animation:idle 1.6s steps(1) infinite}#lparty .run{animation:walk .5s steps(1) infinite}
@@ -120,16 +149,20 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 </style></head><body>
 <section id="lobby" hidden><h1 class="logo">AGENT<br><span>TIMELINES</span></h1><div class="march" id="march" aria-hidden="true"></div>
 <p class="blink">SELECT A DUNGEON</p>
-<div class="px lbox"><h2>LIVE DUNGEONS</h2><div class="lhead" aria-hidden="true"><span></span><span>DUNGEON</span><span>PARTY</span><span>QUESTING</span><span>GOLD</span><span>ISSUES</span><span>STATUS</span><span>SEEN</span></div>
-<div id="lv"></div><h2>HALL OF RECORDS</h2><div id="hr"></div></div>
-<div class="px" id="lparty" aria-live="polite"></div><p class="hint">UP/DOWN SELECT · ENTER JOIN · REFRESHES EVERY 3S</p></section>
-<header id="hud" class="px"><h1><span id="h1">Loading…</span><span class="views" role="group" aria-label="View"><a class="btn" id="vlobby" href="index.html">&lt; LOBBY</a><button class="btn" id="vchart" type="button" aria-pressed="true">CHART</button><button class="btn" id="vmap" type="button" aria-pressed="false">MAP</button></span></h1>
+<div class="px lbox"><div class="ltools"><input id="lq" type="search" placeholder="SEARCH" aria-label="Search sessions" autocomplete="off"><select id="lproj" aria-label="Project"></select><span id="lcount" class="mut"></span><button class="btn" id="lclear" type="button" hidden>CLEAR</button></div>
+<h2>LIVE DUNGEONS</h2><div class="lhead" aria-hidden="true"><span></span><span>DUNGEON</span><span>PARTY</span><span>QUESTING</span><span>COST</span><span>ISSUES</span><span>STATUS</span><span>SEEN</span></div>
+<div id="lv"></div><h2>HALL OF RECORDS</h2><div id="hr"></div>
+<div class="pager" id="lpager" hidden><button class="btn" id="lprev" type="button">&lt; PREV</button><span id="lpage" class="mut" aria-live="polite"></span><button class="btn" id="lnext" type="button">NEXT &gt;</button></div></div>
+<div class="px" id="lparty" aria-live="polite"></div><p class="hint">UP/DOWN SELECT · ENTER JOIN · / SEARCH · LEFT/RIGHT PAGE · REFRESHES EVERY 3S</p></section>
+<header id="hud" class="px"><h1><span id="h1">Loading…</span><span class="views" role="group" aria-label="View"><a class="btn" id="vlobby" href="index.html">&lt; LOBBY</a><button class="btn" id="vchart" type="button" aria-pressed="true">CHART</button><button class="btn" id="vmap" type="button" aria-pressed="false">MAP</button><button class="btn" id="vtime" type="button" aria-pressed="false">TIMELINE</button></span></h1>
 <div class="stats" id="stats"></div><div id="meta" class="meta mut"></div><div id="xp" class="xp" title="Gold by model family"></div><div id="err" class="err" hidden></div>
-<details><summary>How to read the dungeon</summary><dl id="legend"></dl></details></header>
+<details><summary>How to read the dungeon</summary><dl id="legend"></dl></details>
+<details><summary>Cost by model</summary><dl id="costs"></dl></details></header>
 <div class="wrap" id="main"><div id="graph" class="px" tabindex="0" aria-label="Party tree: the guild master on the left, the heroes they sent out to the right"></div><div id="mapbox" class="px" hidden><div class="mapbar"><button class="btn" id="zout" type="button" aria-label="Zoom out">−</button><span id="zl" class="mut">2X</span><button class="btn" id="zin" type="button" aria-label="Zoom in">+</button><span class="mut">click a hero for details</span></div><div id="mapscroll"><canvas id="map" aria-label="Dungeon map: one room per agent; click a character for details"></canvas></div></div>
+<div id="gantt" class="px" hidden><div class="mapbar"><button class="btn" id="gout" type="button" aria-label="Zoom out">−</button><span id="gzl" class="mut">1X</span><button class="btn" id="gin" type="button" aria-label="Zoom in">+</button><button class="btn" id="gfit" type="button">FIT</button><span class="mut">click a bar for details</span></div><div id="gscroll"><div id="ginner"><div class="gaxis" id="gaxis" aria-hidden="true"></div><div id="grows" role="group" aria-label="Agents on a shared time axis"></div><div id="gcols" aria-hidden="true"></div></div></div></div>
 <aside id="side" class="px" aria-label="Quest log and party"><h2>QUEST LOG</h2><ol id="feed"></ol><details><summary>Whole party</summary><ol id="list"></ol></details></aside></div>
 <div id="tip" class="px" role="tooltip" hidden></div><aside id="panel" class="px" role="dialog" aria-label="Hero details" hidden><button id="px" type="button" aria-label="Close">×</button><div id="pb"></div></aside>
-<script src="dungeon.js"></script><script src="actors.js"></script>
+<script src="dungeon.js"></script><script src="actors.js"></script><script src="lobby.js"></script><script src="gantt.js"></script>
 <script>
 (function(){"use strict";
 var SID=(/[?&]sid=([\w-]+)/.exec(location.search)||[])[1],INDEX=!SID,DATA=INDEX?"index.data.js":SID+".data.js";
@@ -145,7 +178,7 @@ var FLAGTXT={"no-model":"The spawn call set no model.","no-effort":"The spawn ca
 "handoff-not-continued":"The agent handed off but no later agent continues it.","auto-filled":"A spawn hook filled a missing model or effort.",
 "orphan":"No parent spawn call was found for this agent.","frontmatter":"Model and effort come from the agent's own file.",
 "ctx":"One turn's context (input + cache read + cache write) reached the context limit."};
-var cur=null,by={},live=true,sel=null,idx=null,prev={},seenEv={},first=true,PR={},prBusy=false;
+var cur=null,by={},live=true,sel=null,idx=null,prev={},seenEv={},first=true,PR={},RP={},prBusy=false;
 function $(id){return document.getElementById(id)}
 function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 function spr(s,scale,cls){var e=el("i","spr "+s[0]+(cls?" "+cls:""));e.style.setProperty("--c",s[1]);e.style.setProperty("--r",s[2]);e.style.setProperty("--s",scale||2);e.setAttribute("aria-hidden","true");return e}
@@ -155,9 +188,13 @@ function hms(t){var d=new Date(t*1000);return pad(d.getHours())+":"+pad(d.getMin
 function fdur(s){s=Math.max(0,Math.round(s));return s>=3600?Math.floor(s/3600)+"h"+pad(Math.floor(s%3600/60))+"m":s>=60?Math.floor(s/60)+"m"+pad(s%60)+"s":s+"s"}
 function ftok(n){return n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n)}
 function tokTxt(t){return t?"input "+t.in.toLocaleString()+" · cache write "+t.cc.toLocaleString()+" · cache read "+t.cr.toLocaleString()+" · output "+t.out.toLocaleString():""}
+function usd(x){return x==null?"–":x===0?"$0.00":x<0.01?"<$0.01":x<100?"$"+x.toFixed(2):"$"+Math.round(x).toLocaleString()}
+function tname(s){var m=/^mcp__(.+?)__(.+)$/.exec(s);return m?m[1]+":"+m[2]:s}
 function plural(n,w){return n+" "+w+(n===1?"":"s")}
 function lsGet(k){try{return localStorage.getItem(k||"tlTab")}catch(e){return null}}
 function lsSet(v,k){try{localStorage.setItem(k||"tlTab",v)}catch(e){}}
+function ssGet(k){try{return sessionStorage.getItem(k)||""}catch(e){return ""}}  /* the lobby filter lives for this tab only */
+function ssSet(k,v){try{sessionStorage.setItem(k,v)}catch(e){}}
 function dur(d,n){var e=n.running?(d.status==="live"?Math.max(d.now,Date.now()/1000):d.now):n.end;return n.start==null||e==null?null:e-n.start}
 function issues(n){return n.flags.filter(function(f){return !info(f)})}
 function famOf(n){return n.id==="main"?"plan":n.fam}
@@ -195,14 +232,20 @@ var r2=el("div","row");
 if(lim)r2.append(hearts(d,n));else r2.append(spr(ICON.potion,1),el("span","nums",n.tools+" tools"));
 if(lim&&n.tools>=d.toolLimit*0.8)r2.firstChild.title+=n.tools>=d.toolLimit?" (over the limit)":" (near the limit)";
 var gold=el("span","nums",n.tokens?ftok(n.tokens):"–");gold.title="Gold = input-equivalent tokens. "+tokTxt(n.tok);
+var r3=el("div","row"),cost=el("span","nums",usd(n.usd)+(n.unpriced?"+":"")+" API price");cost.title="$ = API list price for these tokens"+(n.unpriced?" (some models have no price set, so the real figure is higher)":"");
 r2.append(spr(ICON.hourglass,1),el("span","nums",t==null?"–":fdur(t)),spr(ICON.coin,1),gold,
-q(lim?"hearts · hourglass · gold":"potion · hourglass · gold",(lim?"hearts = tool calls left before the "+d.toolLimit+"-call limit ("+n.tools+" used)":n.tools+" tool calls (no limit applies)")+" · hourglass = run time · gold = input-equivalent tokens"));
+q(lim?"hearts · hourglass · gold · $":"potion · hourglass · gold · $",(lim?"hearts = tool calls left before the "+d.toolLimit+"-call limit ("+n.tools+" used)":n.tools+" tool calls (no limit applies)")+" · hourglass = run time · gold = input-equivalent tokens · $ = API list price for these tokens"));
 bad.forEach(function(f){if(f!=="handoff-not-continued")chip(fl,"flag",ICON.skull,f==="guard-block"?plural(d.denials,"guard block"):f,FLAGTXT[f]||f)});
 if(n.cont&&by[n.cont])chip(fl,"key",ICON.key,"FROM #"+by[n.cont].n,"Picked up the key: continues the work of #"+by[n.cont].n);
 if(n.handoff){var m=d.agents.filter(function(a){return a.cont===n.id})[0];
 if(m)chip(fl,"key",ICON.key,"TO #"+m.n,"Handed off; #"+m.n+" continues it");else chip(fl,"flag",ICON.key,"KEY DROPPED",FLAGTXT["handoff-not-continued"])}
 n.flags.forEach(function(f){if(info(f)&&f!=="handoff")chip(fl,"",f==="tool-limit"?ICON.stop:null,f==="tool-limit"?"LIMIT "+n.limit:f.slice(0,4)==="ctx-"?"CTX "+ftok(n.peak):f,FLAGTXT[f]||FLAGTXT.ctx)});
-c.append(top,el("div","desc",n.desc||"(no description)"),r1,r2,fl);
+r3.append(cost);c.append(top,el("div","desc",n.desc||"(no description)"),r1,r2,r3);
+var tb=n.toolsBy||[];
+if(tb.length){var r4=el("div","row nums"),all=tb.map(function(x){return tname(x[0])+" "+x[1]}),rest=tb.length-3;
+r4.textContent=all.slice(0,3).join(" · ")+(rest>0?" +"+rest:"");r4.title=all.join(" · ");c.append(r4)}
+if(n.reply){var rp=el("div","desc reply","» "+n.reply);c.append(rp)}
+c.append(fl);
 return c}
 function branch(d,n,kids,seen){
 seen[n.id]=1;var b=el("div","br");if(n.running)b.classList.add("run");b.append(card(d,n));
@@ -216,7 +259,7 @@ if(cur&&cur.id!==d.id){prev={};first=true;seenEv={}}
 cur=d;live=d.status==="live";
 var ags=d.agents,run=ags.filter(function(a){return a.running&&a.kind!=="wf"}).length,kids={};
 var P={id:"main",n:0,type:"planner",desc:"Main session: plans and sends out the party",ran:d.planner,fam:d.pfam,running:run>0||d.prun,start:d.t0,end:d.t1,tools:d.tools,
-tokens:d.tokens,tok:d.tok,peak:d.peak,flags:d.denials?["guard-block"]:[],exempt:true,req:"-",tier:"main",prompt:"",parent:null};
+tokens:d.tokens,tok:d.tok,usd:d.usd,unpriced:d.unpriced,toolsBy:d.toolsBy,reply:d.reply,replyLen:d.replyLen,peak:d.peak,flags:d.denials?["guard-block"]:[],exempt:true,req:"-",tier:"main",prompt:"",parent:null};
 by={main:P};ags.forEach(function(a){by[a.id]=a});
 ags.forEach(function(a){var p=by[a.parent]?a.parent:"main";(kids[p]=kids[p]||[]).push(a)});
 var fid=document.activeElement&&document.activeElement.dataset?document.activeElement.dataset.id:null,g=$("graph");
@@ -228,11 +271,13 @@ var tot=FAMS.reduce(function(k,f){return k+(d.models[f]||0)},0);
 $("h1").textContent=live?"DUNGEON RUN IN PROGRESS":"RUN COMPLETE";
 $("stats").replaceChildren(stat(HERO.executor,String(ags.length-wfs),"heroes","subagents spawned"),stat(ICON.hourglass,String(run),"questing","agents running now"),
 stat(ICON.trophy,String(ags.length-wfs-run),"back","agents finished"),stat(ICON.coin,ftok(tot),"gold","tokens, weighted by cost (input 1, cache write 1.25, cache read 0.1, output 5)"),
+stat(ICON.coin,usd(d.cost&&d.cost.total),"cost","What these tokens would cost at Anthropic API list prices as of "+(d.cost?d.cost.asof:"?")+". A subscription plan is not billed per token. Unpriced models: "+(d.cost&&d.cost.unpriced.length?d.cost.unpriced.join(", "):"none")+"."),
 stat(ICON.skull,String(iss),"issues","red flags: rule breaks such as no-model, model-mismatch, orphan, guard blocks",iss?"bad":null));
 if(wfs)$("stats").append(stat(ICON.chest,String(wfs),"treasure runs","Workflow runs"));
 var a=el("a",null,"SESSION "+d.id.slice(0,8));a.href="index.html?sid="+encodeURIComponent(d.id);a.title=d.id;
 $("meta").replaceChildren((live?"LIVE "+hms(d.now):"ENDED")+" · ",a," · "+(d.cwd||"cwd unknown")+" · guild master "+d.planner);
-$("xp").replaceChildren.apply($("xp"),FAMS.filter(function(f){return d.models[f]}).map(function(f){var s=el("span");s.dataset.fam=f;s.style.width=(d.models[f]*100/tot)+"%";s.title=f+" "+Math.round(d.models[f]*100/tot)+"%: "+tokTxt(d.modelTok[f]);return s}));
+$("xp").replaceChildren.apply($("xp"),FAMS.filter(function(f){return d.models[f]}).map(function(f){var s=el("span");s.dataset.fam=f;s.style.width=(d.models[f]*100/tot)+"%";s.title=f+" "+Math.round(d.models[f]*100/tot)+"%: "+tokTxt(d.modelTok[f])+(d.cost?" · "+usd(famUsd(d,f)):"");return s}));
+costs(d);
 $("err").hidden=!d.errors.length;$("err").textContent=d.errors.length+" parse problems: "+d.errors.join("; ");
 var EV={spawn:HERO.executor,done:ICON.trophy,wf:ICON.chest,handoff:ICON.key,cont:ICON.key,guard:ICON.skull,limit:ICON.stop,refused:ICON.warn};
 $("feed").replaceChildren.apply($("feed"),d.events.slice(-20).reverse().map(function(ev){
@@ -242,20 +287,26 @@ if(b.tagName==="BUTTON"){b.type="button";b.addEventListener("click",function(){o
 li.append(b);return li}));
 $("list").replaceChildren.apply($("list"),[P].concat(ags).map(function(n){var li=el("li"),b=el("button"),st=state(d,n);b.type="button";
 b.append(spr(sprite(n,st),1),el("span",null,name(n)+" · "+st[1]+" · "+(n.desc||"").slice(0,40)));b.addEventListener("click",function(){openPanel(n.id)});li.append(b);return li}));
-if(sel)fill();first=false;if(VIEW==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
+if(VIEW==="time")drawGantt(d);if(sel)fill();first=false;if(VIEW==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
 
+function famUsd(d,f){return d.cost.models.reduce(function(k,m){return k+(m.fam===f?m.usd:0)},0)}
+function costs(d){var dl=$("costs"),c=d.cost;dl.replaceChildren();
+if(!c){dl.append(el("dd",null,"No cost data in this file. Run: agent-timelines rebuild"));return}
+c.models.forEach(function(m){var un=c.unpriced.indexOf(m.model)>=0,t=el("dt",null,m.model.replace(/^claude-/,""));t.style.color="var(--"+(FAMS.indexOf(m.fam)>=0?m.fam:"other")+")";
+dl.append(t,el("dd",null,(un?"no price set":usd(m.usd))+" · "+tokTxt(m.tok)))})}
 function kv(a,b){var r=el("div","kv");r.append(el("b",null,a),el("span",null,b));return r}
 function openPanel(id){sel=id;
-if(by[id]&&by[id].brief&&!by[id].prompt&&PR[id]==null)loadPrompts();
-$("panel").hidden=false;render(cur);var c=$("graph").querySelector('[data-id="'+CSS.escape(id)+'"]');if(c)c.scrollIntoView({block:"nearest",inline:"nearest"});$("px").focus()}
-function closePanel(){if(sel===null)return;var id=sel;sel=null;$("panel").hidden=true;render(cur);var c=$("graph").querySelector('[data-id="'+CSS.escape(id)+'"]');if(c)c.focus()}
+var n=by[id];if(n&&((n.brief&&!n.prompt&&PR[id]==null)||(n.replyLen&&n.replyLen!==(RP[id]||"").length)))loadPrompts();  /* a reply that grew since the last load is fetched again; shortcut: replyLen counts code points, so an astral-plane reply refetches on each open */
+$("panel").hidden=false;render(cur);var c=cardOf(id);if(c)c.scrollIntoView({block:"nearest",inline:"nearest"});$("px").focus()}
+function closePanel(){if(sel===null)return;var id=sel;sel=null;$("panel").hidden=true;render(cur);var c=cardOf(id);if(c)c.focus()}
+function cardOf(id){return (VIEW==="time"?$("grows"):$("graph")).querySelector('[data-id="'+CSS.escape(id)+'"]')}  /* the card or bar row in the view that is showing */
 function fill(){
 var n=by[sel],pb=$("pb"),d=cur;if(!n){sel=null;$("panel").hidden=true;return}
 var st=state(d,n),t=dur(d,n),h=el("h3",null,name(n));h.style.cssText="margin-top:0;padding-right:32px";h.prepend(spr(sprite(n,st),3,"hero"),document.createTextNode(" "));
 pb.replaceChildren(h,el("p",null,n.desc||"(no description)"));
 pb.append(kv("Status",st[1]+(n.kind==="wf"?" ("+n.wf.status+")":"")));
 if(n.n&&n.kind!=="wf")pb.append(kv("Model/effort","asked "+n.req+" → ran "+n.ran));else pb.append(kv("Ran",n.ran));
-pb.append(kv("Time",t==null?"–":(n.running?"questing ":"")+fdur(t)),kv("Tools",n.tools+(d.toolLimit&&n.n&&!n.exempt?" of "+d.toolLimit:"")),kv("Gold",n.tokens?n.tokens.toLocaleString()+" input-equiv tokens":"–"));
+pb.append(kv("Time",t==null?"–":(n.running?"questing ":"")+fdur(t)),kv("Tools",n.tools+(d.toolLimit&&n.n&&!n.exempt?" of "+d.toolLimit:"")),kv("Gold",n.tokens?n.tokens.toLocaleString()+" input-equiv tokens":"–"),kv("Cost",usd(n.usd)+(n.unpriced?" (some models have no price set)":"")));
 if(n.tok)pb.append(kv("Split",tokTxt(n.tok)),kv("Peak context",n.peak?n.peak.toLocaleString()+(n.peak>=d.ctxLimit?" (over "+d.ctxLimit.toLocaleString()+")":""):"–"));
 if(n.n)pb.append(kv("Class",n.tier+" ("+n.type+")"),kv(n.kind==="wf"?"Run id":"Agent id",n.id),kv("Sent by",by[n.parent]?name(by[n.parent]):"GUILD MASTER"));
 if(n.phase)pb.append(kv("Phase",n.phase));
@@ -268,15 +319,19 @@ if(n.handoff){var m=d.agents.filter(function(a){return a.cont===n.id})[0];pb.app
 if(n.limit)pb.append(kv("Tool limit","warned at "+n.limit+", ended at "+n.tools));
 if(n.cont)pb.append(kv("Continues",by[n.cont]?name(by[n.cont]):n.cont));
 if(n.id==="main"&&d.denials)pb.append(kv("Guard blocks",String(d.denials)));
+if(n.toolsBy&&n.toolsBy.length){pb.append(el("h3",null,"TOOLS"));n.toolsBy.forEach(function(x){pb.append(kv(tname(x[0]),String(x[1])))})}
 if(n.flags.length){pb.append(el("h3",null,"FLAGS"));n.flags.forEach(function(f){var r=el("div","kv"),k=el("b",info(f)?null:"bad",f);r.append(k,el("span",null,FLAGTXT[f]||FLAGTXT.ctx));pb.append(r)})}
 var pr=n.prompt||PR[n.id];
 if(pr)pb.append(el("h3",null,"ORDERS (FULL PROMPT)"),el("pre",null,pr));
-else if(n.brief)pb.append(el("h3",null,"ORDERS (FULL PROMPT)"),el("p","mut","Loading…"))}
+else if(n.brief)pb.append(el("h3",null,"ORDERS (FULL PROMPT)"),el("p","mut","Loading…"));
+var rp=RP[n.id]||n.reply;
+if(rp){pb.append(el("h3",null,n.running?"SAYING":"REPORT (FINAL REPLY)"),el("pre",null,rp));if(n.replyLen>rp.length)pb.append(el("p","mut","Loading…"))}}
 
 function legend(){var dl=$("legend");
 [[HERO.main,"Guild master = the main session. Heroes by class: knight executor, rogue scanner, sage planner, bard writer, barbarian runner, viking other."],
 [HERO.workflow,"Treasure run = a Workflow run (a mimic while it runs)."],[HERO.ghost,"Ghost = berserk: ignored the tool limit."],
-[ICON.heart,"Hearts (only when a tool limit is configured) = tool budget: 5 hearts is the tool-call limit; one is lost per fifth used."],[ICON.coin,"Gold = input-equivalent tokens (input 1, cache write 1.25, cache read 0.1, output 5)."],
+[ICON.heart,"Hearts (only when a tool limit is configured) = tool budget: 5 hearts is the tool-call limit; one is lost per fifth used."],[ICON.coin,"Gold = input-equivalent tokens (input 1, cache write 1.25, cache read 0.1, output 5). $ = API list price of the same tokens."],
+[ICON.hourglass,"Timeline view: one bar per agent on a shared clock, rows in party-tree order; a striped bar is still running, a key or skull after a bar is a handoff or an issue. Zoom with + and -."],
 [ICON.key,"Key = a handoff: TO #6 on the one that stopped, FROM #4 on the one that continues. KEY DROPPED = nobody continued."],
 [ICON.skull,"Skull chips are issues; grey chips are info. Name colour = model family that ran; 'x?/y?' = requested, not seen running yet."]]
 .forEach(function(x){var t=el("dt");t.append(spr(x[0],2));dl.append(t,el("dd",null,x[1]))})}
@@ -289,8 +344,8 @@ function dname(r){return (String(r.cwd||"?").split("/").pop()||"/").toUpperCase(
 function join(id){location.href="index.html?sid="+encodeURIComponent(id)}
 function lrow(r){var b=el("button","lrow"+(r.id===lsel?" on":""));b.type="button";b.dataset.id=r.id;if(r.id===lsel)b.setAttribute("aria-current","true");
 var nm=el("b",null,dname(r));nm.append(el("span","sid",r.id.slice(0,8)+(r.planner?" · "+r.planner:"")));
-function n(icon,v,c){var x=el("span","n"+(c?" "+c:""));x.append(spr(icon,1),String(v));return x}
-b.append(el("span","cur",">"),nm,n(HERO.executor,r.heroes),n(ICON.hourglass,r.running),n(ICON.coin,ftok(r.gold||0)),n(ICON.skull,r.issues,r.issues?"bad":null),
+function n(icon,v,c,tip){var x=el("span","n"+(c?" "+c:""));x.append(spr(icon,1),String(v));if(tip)x.title=tip;return x}
+b.append(el("span","cur",">"),nm,n(HERO.executor,r.heroes),n(ICON.hourglass,r.running),n(ICON.coin,usd(r.usd),null,"Gold "+ftok(r.gold||0)),n(ICON.skull,r.issues,r.issues?"bad":null),
 el("span",r.live?"on-air":"mut",r.live?"LIVE":"ENDED"),el("span","mut",ago(r.updated)));
 b.setAttribute("aria-label",dname(r)+", "+(r.live?"live":"ended")+", "+plural(r.heroes,"agent")+", "+r.running+" working, "+plural(r.issues,"issue")+". Press Enter to join.");
 b.addEventListener("mouseenter",function(){pickRow(r.id)});b.addEventListener("focus",function(){pickRow(r.id)});b.addEventListener("click",function(){join(r.id)});return b}
@@ -303,14 +358,27 @@ var row=el("div","row");row.append(spr(HERO.main,3,"hero"+(r.live&&r.running?" r
 r.party.forEach(function(p,i){var e=spr(lobbySpr(p),3,"hero"+(p[2]?" run":""));e.style.animationDelay=(i%4)*0.2+"s";row.append(e)});
 if(r.heroes+r.workflows>r.party.length)row.append(el("span","mut","+"+(r.heroes+r.workflows-r.party.length)));
 box.replaceChildren(el("h2",null,"PARTY · "+dname(r)),row,el("div","mut",(r.last?"LAST: "+r.last:"No events yet")));}
+var LQ=ssGet("tlQ"),LPROJ=ssGet("tlProj"),LPAGE=0,PAGE=15,LPK=null;
 function drawLobby(){
-var rows=idx.sessions||[],lv=rows.filter(function(r){return r.live}),old=rows.filter(function(r){return !r.live}),f=document.activeElement&&document.activeElement.classList.contains("lrow");
-if(!rows.some(function(r){return r.id===lsel}))lsel=(lv[0]||old[0]||{}).id;
-$("lv").replaceChildren.apply($("lv"),lv.length?lv.map(lrow):[empty("NO ADVENTURERS ONLINE. Start a Claude Code session: its party appears here on the first hook event.")]);
-$("hr").replaceChildren.apply($("hr"),old.length?old.map(lrow):[empty("NO RECORDS YET.")]);
+var rows=idx.sessions||[],ps=Lobby.projects(rows),pk=JSON.stringify(ps),f=document.activeElement&&document.activeElement.classList.contains("lrow");
+if(LPROJ&&!ps.some(function(p){return p.cwd===LPROJ}))LPROJ="";
+if(pk!==LPK){LPK=pk;var sl=$("lproj"),o=el("option","","ALL PROJECTS");o.value="";  /* rebuilt only when the project list changed, so an open dropdown survives the poll */
+sl.replaceChildren.apply(sl,[o].concat(ps.map(function(p){var x=el("option","",p.name.toUpperCase()+" ("+p.n+")");x.value=p.cwd;return x})))}
+$("lproj").value=LPROJ;
+var vis=Lobby.filter(rows,LQ,LPROJ),lv=vis.filter(function(r){return r.live}),pg=Lobby.page(vis.filter(function(r){return !r.live}),LPAGE,PAGE),act=!!(LQ||LPROJ);
+LPAGE=pg.page;
+if(!lv.concat(pg.items).some(function(r){return r.id===lsel}))lsel=(lv[0]||pg.items[0]||{}).id;
+$("lv").replaceChildren.apply($("lv"),lv.length?lv.map(lrow):[empty(act?"NO MATCH.":"NO ADVENTURERS ONLINE. Start a Claude Code session: its party appears here on the first hook event.")]);
+$("hr").replaceChildren.apply($("hr"),pg.items.length?pg.items.map(lrow):[empty(act?"NO MATCH.":"NO RECORDS YET.")]);
+$("lcount").textContent=act?vis.length+" OF "+rows.length:rows.length+(rows.length===1?" SESSION":" SESSIONS");$("lclear").hidden=!act;
+$("lpager").hidden=pg.pages<2;$("lpage").textContent="PAGE "+(pg.page+1)+" OF "+pg.pages;$("lprev").disabled=pg.page<1;$("lnext").disabled=pg.page>=pg.pages-1;
 if(f){var b=document.querySelector('.lrow[data-id="'+CSS.escape(lsel)+'"]');if(b)b.focus()}
 drawParty();live=true}
-function lobbyKeys(e){if(!INDEX||e.target.tagName==="INPUT")return;var bs=[].slice.call(document.querySelectorAll(".lrow")),i=bs.findIndex(function(b){return b.dataset.id===lsel});
+function lobbyFilter(){LPAGE=0;ssSet("tlQ",LQ);ssSet("tlProj",LPROJ);if(idx)drawLobby()}
+function lobbyKeys(e){var t=e.target.tagName;if(!INDEX||t==="INPUT"||t==="SELECT")return;
+if(e.key==="/"&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();$("lq").focus();return}
+if(e.key==="ArrowLeft"||e.key==="PageUp"||e.key==="ArrowRight"||e.key==="PageDown"){e.preventDefault();LPAGE+=(e.key==="ArrowLeft"||e.key==="PageUp")?-1:1;if(idx)drawLobby();return}
+var bs=[].slice.call(document.querySelectorAll(".lrow")),i=bs.findIndex(function(b){return b.dataset.id===lsel});
 if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();var n=bs[Math.max(0,Math.min(bs.length-1,i+(e.key==="ArrowDown"?1:-1)))];if(n){pickRow(n.dataset.id);n.focus()}}
 else if(e.key==="Enter"&&i>=0&&!(document.activeElement&&document.activeElement.classList.contains("lrow"))){e.preventDefault();join(lsel)}}
 function march(){var m=$("march"),cast=["main","executor","scanner","plan","writer","runner","other"];
@@ -320,7 +388,7 @@ var foe=el("span","walker");foe.style.animationDelay=(cast.length*0.9+0.6)+"s";f
 window.TL=function(d){if(!d||typeof d!=="object")return;if(INDEX){idx=d;drawLobby();return}
 if(cur&&cur.id===d.id&&cur.now===d.now&&!d.prun&&!d.agents.some(function(a){return a.running}))return;  /* same build, nothing ticking */
 render(d)};
-window.TLP=function(p){if(p&&cur&&p.id===cur.id&&p.prompts){PR=p.prompts;if(sel)fill()}};
+window.TLP=function(p){if(p&&cur&&p.id===cur.id&&p.prompts){PR=p.prompts;RP=p.replies||{};if(sel)fill()}};
 function loadPrompts(){if(prBusy||INDEX)return;prBusy=true;var sc=document.createElement("script");sc.src=SID+".prompts.js?t="+Date.now();
 sc.onload=sc.onerror=function(){prBusy=false;sc.remove()};document.head.appendChild(sc)}
 function poll(){var sc=document.createElement("script");sc.src=DATA+"?t="+Date.now();sc.onload=sc.onerror=function(){sc.remove()};document.head.appendChild(sc)}
@@ -338,13 +406,34 @@ document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.c
 document.addEventListener("focusout",function(){$("tip").hidden=true});
 document.addEventListener("click",function(e){if(e.target.closest&&e.target.closest(".q"))e.stopPropagation()},true);  /* a ? inside a card shows help, not the panel */
 /* ---- map view: the same session as a dungeon (dungeon.js lays out rooms, actors.js draws the characters) */
-var VIEW=lsGet("tlView")==="map"?"map":"chart",RMQ=matchMedia("(prefers-reduced-motion: reduce)").matches,SHEETS={td:new Image(),ob:new Image()},M={scale:2,mem:{},shape:"",sid:null,raf:0};
+var VIEW=["map","time"].indexOf(lsGet("tlView"))>=0?lsGet("tlView"):"chart",GZ=[1,2,4,8],gz=0,RMQ=matchMedia("(prefers-reduced-motion: reduce)").matches,SHEETS={td:new Image(),ob:new Image()},M={scale:2,mem:{},shape:"",sid:null,raf:0};
 SHEETS.td.src="tiny-dungeon.png";SHEETS.ob.src="one-bit.png";
 function mapNodes(d){var run=d.agents.some(function(a){return a.running&&a.kind!=="wf"});
 return [{id:"main",parent:null,running:run||d.prun,flags:[]}].concat(d.agents.map(function(a){return {id:a.id,parent:a.parent,tier:a.tier,kind:a.kind,running:a.running,flags:a.flags,wf:a.wf}}))}
-function setView(v){VIEW=v;lsSet(v,"tlView");$("graph").hidden=v==="map";$("mapbox").hidden=v!=="map";
-$("vchart").setAttribute("aria-pressed",String(v==="chart"));$("vmap").setAttribute("aria-pressed",String(v==="map"));
-if(v==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
+function setView(v){VIEW=v;lsSet(v,"tlView");$("graph").hidden=v!=="chart";$("mapbox").hidden=v!=="map";$("gantt").hidden=v!=="time";
+$("vchart").setAttribute("aria-pressed",String(v==="chart"));$("vmap").setAttribute("aria-pressed",String(v==="map"));$("vtime").setAttribute("aria-pressed",String(v==="time"));
+if(v==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame);if(v==="time"&&cur)drawGantt(cur)}
+/* ---- timeline view: Gantt.layout (gantt.js) places the bars; rows are buttons in party-tree order */
+function drawGantt(d){
+var now=live?Math.max(d.now,Date.now()/1000):d.now,ns=[by.main].concat(d.agents).map(function(n){return {id:n.id,parent:n.parent,start:n.start,end:n.running?now:n.end,running:n.running}});
+var L=Gantt.layout(ns,null,live?now:null),fid=document.activeElement&&document.activeElement.closest&&document.activeElement.closest("#grows")?document.activeElement.dataset.id:null,pc=function(x){return (x*100).toFixed(3)+"%"};
+$("ginner").style.width=GZ[gz]*100+"%";
+$("gaxis").replaceChildren.apply($("gaxis"),[el("div","glabel"),(function(){var t=el("div","gtrack");L.ticks.forEach(function(k){var x=el("span","gtick",k.label);x.style.left=pc(k.x);t.append(x)});return t})()]);
+var cols=[];L.ticks.forEach(function(k){var x=el("i","gline");x.style.left=pc(k.x);cols.push(x)});
+if(live&&now>=L.t0&&now<=L.t1){var nw=el("i","gline now");nw.style.left=pc((now-L.t0)/(L.t1-L.t0));nw.title="now";cols.push(nw)}
+$("gcols").replaceChildren.apply($("gcols"),cols);
+$("grows").replaceChildren.apply($("grows"),L.rows.map(function(r){
+var n=by[r.id],st=state(d,n),bad=issues(n),t=dur(d,n),b=el("button","grow"+(sel===n.id?" sel":"")),lb=el("span","glabel"),tr=el("span","gtrack"),bar=el("i","gbar"+(n.running?" run":""));
+b.type="button";b.dataset.id=n.id;b.dataset.fam=famOf(n);b.dataset.st=st[0];
+b.title=(n.desc||name(n))+" · "+(t==null?"–":fdur(t))+" · "+usd(n.usd)+(n.unpriced?"+":"")+(n.start==null?"":" · from "+hms(n.start));
+b.setAttribute("aria-label",name(n)+", "+st[1]+", "+(n.desc||"")+(bad.length?", "+plural(bad.length,"issue"):"")+", "+(t==null?"no duration":fdur(t)));
+lb.style.setProperty("--d",r.depth);lb.append(spr(sprite(n,st),1),el("span",null,name(n)));
+bar.style.left=pc(r.x);bar.style.width=pc(r.w);
+if(n.handoff)bar.append(spr(ICON.key,1));if(bad.length)bar.append(spr(ICON.skull,1));
+tr.append(bar);b.append(lb,tr);return b}));
+if(fid){var f=$("grows").querySelector('[data-id="'+CSS.escape(fid)+'"]');if(f)f.focus()}}
+function gzoom(dz){var sc=$("gscroll"),w=$("ginner").offsetWidth||1,c=(sc.scrollLeft+sc.clientWidth/2)/w,n=Math.max(0,Math.min(GZ.length-1,gz+dz));if(n===gz)return;gz=n;$("gzl").textContent=GZ[gz]+"X";
+if(cur)drawGantt(cur);sc.scrollLeft=c*$("ginner").offsetWidth-sc.clientWidth/2}
 function mapFrame(now){
 if(VIEW!=="map"||!cur){M.raf=0;return}
 M.raf=requestAnimationFrame(mapFrame);
@@ -369,9 +458,17 @@ function zoom(dz){var sc=$("mapscroll"),cv=$("map"),n=Math.max(1,Math.min(6,M.sc
 M.center=[(sc.scrollLeft+sc.clientWidth/2)/(cv.width||1),(sc.scrollTop+sc.clientHeight/2)/(cv.height||1)];M.scale=n;$("zl").textContent=n+"X"}
 $("map").addEventListener("click",function(e){if(!M.d)return;var r=this.getBoundingClientRect(),S=16*M.scale,x=Math.floor((e.clientX-r.left)/S)+M.d.ox,y=Math.floor((e.clientY-r.top)/S)+M.d.oy;
 var hit=M.acts.filter(function(a){var w=a.walk&&a.walk.at||[a.x,a.y];return (w[0]===x&&w[1]===y)||(a.fx===x&&a.fy===y)||(a.x===x&&a.y===y)})[0];if(hit)openPanel(hit.id)});
-$("vchart").addEventListener("click",function(){setView("chart")});$("vmap").addEventListener("click",function(){setView("map")});
+$("vchart").addEventListener("click",function(){setView("chart")});$("vmap").addEventListener("click",function(){setView("map")});$("vtime").addEventListener("click",function(){setView("time")});
+$("gin").addEventListener("click",function(){gzoom(1)});$("gout").addEventListener("click",function(){gzoom(-1)});$("gfit").addEventListener("click",function(){gzoom(-gz)});
+$("grows").addEventListener("click",function(e){var r=e.target.closest(".grow");if(r)openPanel(r.dataset.id)});
 $("zin").addEventListener("click",function(){zoom(1)});$("zout").addEventListener("click",function(){zoom(-1)});
 setView(VIEW);
-if(INDEX){document.body.classList.add("lobby");$("lobby").hidden=false;$("hud").hidden=true;$("main").hidden=true;march();document.addEventListener("keydown",lobbyKeys)}
+if(INDEX){$("lq").value=LQ;
+$("lq").addEventListener("input",function(){LQ=this.value;lobbyFilter()});
+$("lq").addEventListener("keydown",function(e){if(e.key==="Escape"&&this.value){this.value="";LQ="";lobbyFilter()}else if(e.key==="Escape"||e.key==="Enter")this.blur()});
+$("lproj").addEventListener("change",function(){LPROJ=this.value;lobbyFilter()});
+$("lclear").addEventListener("click",function(){LQ=LPROJ="";$("lq").value="";lobbyFilter()});
+$("lprev").addEventListener("click",function(){LPAGE--;drawLobby()});$("lnext").addEventListener("click",function(){LPAGE++;drawLobby()});
+document.body.classList.add("lobby");$("lobby").hidden=false;$("hud").hidden=true;$("main").hidden=true;march();document.addEventListener("keydown",lobbyKeys)}
 legend();poll()})();
 </script></body></html>

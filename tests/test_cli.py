@@ -1,5 +1,5 @@
 """python -m pytest tests  (or: python tests/test_cli.py). Install/uninstall keep other hooks and replace old ones."""
-import http.client, json, os, sys, tempfile, threading
+import http.client, io, json, os, re, sys, tempfile, threading
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from agent_timelines import cli
 
@@ -19,6 +19,42 @@ def test_install_uninstall():
     cli.main(["uninstall", "--settings", p])
     s = json.load(open(p))
     assert s["model"] == "opus" and s["hooks"] == {"Stop": [{"hooks": [other]}]}, s
+
+
+ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+
+def test_plugin_files():
+    j = lambda *p: json.load(open(os.path.join(ROOT, *p)))
+    plugin, market, hooks = j(".claude-plugin", "plugin.json"), j(".claude-plugin", "marketplace.json"), j("hooks", "hooks.json")["hooks"]
+    ver = re.search(r'^version = "([^"]+)"', open(os.path.join(ROOT, "pyproject.toml")).read(), re.M).group(1)
+    assert plugin["version"] == ver and plugin["name"] == market["plugins"][0]["name"], (plugin, ver)
+    assert set(hooks) == set(cli.EVENTS), hooks.keys()
+    for ev, groups in hooks.items():
+        for h in groups[0]["hooks"]:
+            assert "agent_timelines hook --via plugin" in h["command"] and '"${CLAUDE_PLUGIN_ROOT}' in h["command"], h
+
+
+def test_hook_via_plugin():
+    from agent_timelines import timeline as tl
+    d = tempfile.mkdtemp()
+    calls, keep = [], (tl.CLAUDE_DIR, tl.OUT_DIR, cli.detach, sys.stdin)
+    ev = json.dumps({"session_id": "s1", "transcript_path": "/x/s1.jsonl", "hook_event_name": "Stop"})
+
+    def run(*argv):
+        sys.stdin = io.StringIO(ev)
+        cli.main(["hook", *argv])
+    try:
+        tl.CLAUDE_DIR, tl.OUT_DIR, cli.detach = d, os.path.join(d, "out"), lambda *a: calls.append(a)
+        run("--via", "plugin")
+        assert len(calls) == 1, calls  # no settings.json: go on
+        open(os.path.join(d, "settings.json"), "w").write(json.dumps({"hooks": {"Stop": [{"hooks": [{"command": "python3 -m " + cli.MARK}]}]}}))
+        run("--via", "plugin")
+        assert len(calls) == 1, calls  # install hooks present: the plugin stays quiet
+        run()
+        assert len(calls) == 2, calls  # without --via it always builds
+    finally:
+        tl.CLAUDE_DIR, tl.OUT_DIR, cli.detach, sys.stdin = keep
 
 
 def test_serve_refuses_cross_site():
@@ -57,5 +93,7 @@ def test_serve_refuses_cross_site():
 
 if __name__ == "__main__":
     test_install_uninstall()
+    test_plugin_files()
+    test_hook_via_plugin()
     test_serve_refuses_cross_site()
     print("ok")

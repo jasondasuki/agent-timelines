@@ -49,16 +49,27 @@ def install(a):
         strip(hooks)
         for ev, matcher in EVENTS.items():
             hooks.setdefault(ev, []).append(dict({"matcher": matcher} if matcher else {}, hooks=[{"type": "command", "command": cmd}]))
-    print("installed %d hooks in %s\nfill the lobby with past sessions: agent-timelines rebuild\nopen the dashboard: agent-timelines serve" % (len(EVENTS), edit_settings(a.settings, edit)))
+    print("installed %d hooks in %s\nfill the lobby with past sessions: agent-timelines rebuild\nopen the dashboard: agent-timelines serve\n(using the Claude Code plugin instead? then skip this command)" % (len(EVENTS), edit_settings(a.settings, edit)))
 
 
 def uninstall(a):
     print("removed agent-timelines hooks from", edit_settings(a.settings, strip))
 
 
+def plugin_duplicate():
+    """True when settings.json already holds this tool's hooks, so the plugin's copy stays quiet."""
+    try:
+        with open(os.path.join(tl.CLAUDE_DIR, "settings.json"), encoding="utf-8") as f:
+            return MARK in f.read()
+    except OSError:
+        return False
+
+
 def hook(a):
     """Claude Code passes the event JSON on stdin. Never fail the hook, never block it: the rebuild runs detached."""
     try:
+        if a.via == "plugin" and plugin_duplicate():
+            return
         d = json.load(sys.stdin)
         sid, tp, ev = d.get("session_id"), d.get("transcript_path"), d.get("hook_event_name") or ""
         data = os.path.join(tl.OUT_DIR, "%s.data.js" % sid)
@@ -173,7 +184,9 @@ def main(argv=None):
     sp = sub.add_parser("rebuild", help="regenerate data for recent sessions from their transcripts")
     sp.add_argument("--days", type=float, default=tl.RETAIN_DAYS)
     sp.set_defaults(fn=rebuild)
-    sub.add_parser("hook", help="(called by Claude Code) handle one hook event from stdin").set_defaults(fn=hook)
+    sp = sub.add_parser("hook", help="(called by Claude Code) handle one hook event from stdin")
+    sp.add_argument("--via", help="'plugin' when the Claude Code plugin calls it")
+    sp.set_defaults(fn=hook)
     sp = sub.add_parser("build", help="(called by the hook) rebuild one session's data")
     sp.add_argument("transcript")
     sp.add_argument("--event")
