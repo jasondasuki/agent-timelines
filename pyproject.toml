@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-timelines"
-version = "0.2.0"
+version = "0.2.1"
 description = "Live delegation graph of Claude Code sessions and their subagents"
 readme = "README.md"
 license = "MIT"
