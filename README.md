@@ -64,6 +64,7 @@ Start or continue a Claude Code session; it appears in the lobby on its first ho
 | `open [SESSION-PREFIX]` | Build one session (newest by default) and open it from disk, no server. |
 | `rebuild [--days N]` | Regenerate data for recent sessions from their transcripts. |
 | `list` | Recent sessions with their subagent counts. |
+| `version` (or `--version`) | Print the version. |
 
 `--settings` targets another Claude config dir, e.g. `--settings ~/.claude-work/settings.json`.
 `CLAUDE_CONFIG_DIR` is respected for the default paths.

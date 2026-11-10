@@ -103,3 +103,14 @@ Object.keys(trees).forEach(function (name) {
   d.rooms.forEach(function (r, i) { assert(lit[i], 'room ' + r.id + ' has no light'); });
 });
 console.log('ok');
+
+// reveal: a new room's corridor is dug from the parent's door, then the room fades in; after that nothing is hidden
+(function () {
+  var ns = [{ id: 'main' }, { id: 'a', parent: 'main', tier: 'executor' }], d = D.generate('rv', ns), L = d.paths[0].cells.length;
+  var h0 = D.hidden(d, 'a', 0), mid = D.hidden(d, 'a', 1), end = D.hidden(d, 'a', 5000), last = 2;
+  assert.strictEqual(h0.cells.length, L); assert.strictEqual(h0.dark, 1);
+  assert.deepStrictEqual(mid.cells[0], d.paths[0].cells[0], 'digging starts at the parent door');
+  for (var t = 0; t < 2000; t += 10) { var h = D.hidden(d, 'a', t); assert(h.dark <= last && (h.dark === 1 || !h.cells.length), 'room stays dark until the corridor is dug'); last = h.dark; }
+  assert.deepStrictEqual(end, { cells: [], dark: 0 }); assert.deepStrictEqual(D.hidden(d, 'main', 0).cells, [], 'the hall has no corridor');
+  console.log('ok (reveal)');
+})();

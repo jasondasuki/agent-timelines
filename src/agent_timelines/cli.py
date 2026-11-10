@@ -1,5 +1,5 @@
 """agent-timelines: install the Claude Code hooks, build session data, serve the dashboard."""
-import argparse, functools, glob, http.server, json, os, shlex, shutil, subprocess, sys, tempfile, time, urllib.parse, webbrowser
+import argparse, fcntl, functools, glob, http.server, json, os, shlex, shutil, subprocess, sys, tempfile, time, urllib.parse, webbrowser
 from datetime import datetime
 
 from . import timeline as tl
@@ -83,9 +83,12 @@ def hook(a):
 def build(a):
     tp = a.transcript.split("/subagents/")[0] + ".jsonl" if "/subagents/" in a.transcript else a.transcript  # subagent events may name their own file
     sid = os.path.basename(tp)[:-6]
-    closed = tl.closed_ids(tl.OUT_DIR, sid, a.event, a.closed)
-    d = tl.load(tp, closed=closed, ended=a.event == "SessionEnd", event=a.event)
-    page = tl.publish(d, closed=closed)
+    # one build per session at a time: two agents stopping together would each rewrite the closed list without the other's id
+    with open(os.path.join(tempfile.gettempdir(), "agent-timeline-%s.lock" % sid), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        closed = tl.closed_ids(tl.OUT_DIR, sid, a.event, a.closed)
+        d = tl.load(tp, closed=closed, ended=a.event == "SessionEnd", event=a.event)
+        page = tl.publish(d, closed=closed)
     # No hook fires when a Workflow ends, so while one looks live this re-runs itself every 20s.
     # shortcut: gives up after 30 re-runs (10 min); upgrade if Claude Code adds a workflow-end hook event.
     if a.event and a.recheck < 30 and any(n.get("kind") == "wf" and n["running"] for n in d["agents"]):
@@ -166,9 +169,24 @@ def serve(a):
         pass
 
 
+def version():
+    """The installed package's version; run from the plugin (not installed, on PYTHONPATH) it is the plugin manifest's."""
+    try:
+        from importlib.metadata import version as v
+        return v("agent-timelines")
+    except Exception:
+        try:
+            with open(os.path.join(os.path.dirname(__file__), "..", "..", ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+                return json.load(f)["version"]
+        except (OSError, ValueError, KeyError):
+            return "unknown"
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="agent-timelines", description="Live delegation graph of Claude Code sessions and subagents.")
+    p.add_argument("--version", action="version", version="agent-timelines " + version())
     sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("version", help="print the version").set_defaults(fn=lambda a: print("agent-timelines " + version()))
     for name, fn, help_ in (("install", install, "add the hooks to Claude Code settings"), ("uninstall", uninstall, "remove the hooks")):
         sp = sub.add_parser(name, help=help_)
         sp.add_argument("--settings", help="settings.json to edit (default: $CLAUDE_CONFIG_DIR or ~/.claude)")

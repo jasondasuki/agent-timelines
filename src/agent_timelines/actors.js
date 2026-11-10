@@ -16,6 +16,7 @@
   var OB_BONES = 721;   // ob bone pile under a fallen enemy
   var STEP_MS = 220;    // one cell of running
   var TRIP_MS = 110;    // one cell of the walk to a new hero's room: brisk, corridors are long
+  var BOUT_MS = 900;    // one exchange of blows: the least a hero fights after walking in, however short its job was
   var OB_KEY = 560;     // ob gold key carried by a hero that continues a handoff
   var OB_TROPHY = 808;  // ob trophy raised on victory (tinted gold when drawn)
 
@@ -71,8 +72,10 @@
       // A hero's new state starts a fresh walk from its home cell; the guild master keeps walking through idle <-> cast.
       if (!m || m.state !== a.state) mem[a.id] = { state: a.state, since: m ? now : -Infinity,
         walk: m && a.kind === 'gm' ? m.walk : { r: D.prng('walk/' + a.id + '/' + now) },
-        trip: !m && watching && a.kind === 'hero' ? { t0: now } : null };
-      a.since = mem[a.id].since; a.walk = mem[a.id].walk; a.trip = mem[a.id].trip;
+        // a walk in survives the change: in a replay most jobs end before the hero has crossed the corridor
+        trip: m ? m.trip : watching && a.kind === 'hero' ? { t0: now } : null,
+        born: m ? m.born : watching ? now : -Infinity }; // born: when its room appeared while you watched (Dungeon.reveal)
+      a.since = mem[a.id].since; a.walk = mem[a.id].walk; a.trip = mem[a.id].trip; a.born = mem[a.id].born;
     });
   }
 
@@ -159,8 +162,8 @@
       if (a.kind === 'gm') return rest(a, a.idx); // always roams the hall; casts at each stop while work is going on
       if (a.kind === 'wf') return spr(a.idx, X + (a.state === 'fight' ? (step(300, 2, off) ? p : -p) : 0), Y, { alpha: a.failed ? 0.5 : 1 });
 
-      var FX = (a.fx - d.ox) * S, el = now - a.since, tr = a.trip;
-      if (tr && a.state === 'fight' && !still) { // just spawned: still walking in while its enemy waits
+      var FX = (a.fx - d.ox) * S, tr = still ? null : a.trip, el = now - a.since;
+      if (tr) { // spawned while you watched: walks in while its enemy waits, even if its job has ended meanwhile
         if (!tr.cells) tr.cells = trip(d, a);
         var f = (now - tr.t0) / TRIP_MS, n = Math.floor(f), c1 = tr.cells[n], c0 = n ? tr.cells[n - 1] : a.from;
         if (c1) {
@@ -169,8 +172,9 @@
           if (a.key) ob(OB_KEY, TX, TY - S + 2 * p, 1);
           return spr(a.foe, FX, Y - step(1600, 2, off) * p, { flip: true });
         }
+        el = Math.min(el, now - tr.t0 - tr.cells.length * TRIP_MS - BOUT_MS); // the victory starts after it arrived and struck once
       }
-      if (a.state === 'fight') { // 6 beats: wind-up, lunge, hit (enemy flashes, slash, sparks), recoil, counter-attack, reset
+      if (a.state === 'fight' || el < 0) { // 6 beats: wind-up, lunge, hit (enemy flashes, slash, sparks), recoil, counter-attack, reset
         k = step(900, 6, off);
         var hx = [0, 2, 4, 1, 0, 0][k] * p, ex = [0, 0, 2, 1, -3, 0][k] * p;
         spr(a.idx, X + hx, Y);

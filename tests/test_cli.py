@@ -1,5 +1,5 @@
 """python -m pytest tests  (or: python tests/test_cli.py). Install/uninstall keep other hooks and replace old ones."""
-import http.client, io, json, os, re, sys, tempfile, threading
+import argparse, http.client, io, json, os, re, sys, tempfile, threading, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from agent_timelines import cli
 
@@ -29,6 +29,7 @@ def test_plugin_files():
     plugin, market, hooks = j(".claude-plugin", "plugin.json"), j(".claude-plugin", "marketplace.json"), j("hooks", "hooks.json")["hooks"]
     ver = re.search(r'^version = "([^"]+)"', open(os.path.join(ROOT, "pyproject.toml")).read(), re.M).group(1)
     assert plugin["version"] == ver and plugin["name"] == market["plugins"][0]["name"], (plugin, ver)
+    assert re.match(r"\d+\.\d+\.\d+", cli.version()), cli.version()  # installed: the package's; from the source tree: the plugin manifest's
     assert set(hooks) == set(cli.EVENTS), hooks.keys()
     for ev, groups in hooks.items():
         for h in groups[0]["hooks"]:
@@ -55,6 +56,27 @@ def test_hook_via_plugin():
         assert len(calls) == 2, calls  # without --via it always builds
     finally:
         tl.CLAUDE_DIR, tl.OUT_DIR, cli.detach, sys.stdin = keep
+
+
+def test_build_keeps_both_closed_ids():
+    """Two SubagentStop builds of one session at the same moment: neither loses the other's closed agent."""
+    from agent_timelines import timeline as tl
+    d = tempfile.mkdtemp()
+    tp = os.path.join(d, "race1.jsonl")
+    open(tp, "w").write(json.dumps({"type": "user", "timestamp": "2026-01-01T00:00:00Z", "message": {"content": "hi"}}) + "\n")
+    keep, load = tl.OUT_DIR, tl.load
+
+    def slow(*a, **k):  # wide enough that, unlocked, both builds read the closed list before either writes it
+        time.sleep(0.2)
+        return load(*a, **k)
+    try:
+        tl.OUT_DIR, tl.load = os.path.join(d, "out"), slow
+        ts = [threading.Thread(target=cli.build, args=(argparse.Namespace(transcript=tp, event="SubagentStop", closed=x, recheck=0),)) for x in "AB"]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        assert tl.closed_ids(tl.OUT_DIR, "race1") == {"A", "B"}, tl.closed_ids(tl.OUT_DIR, "race1")
+    finally:
+        tl.OUT_DIR, tl.load = keep, load
 
 
 def test_serve_refuses_cross_site():
@@ -95,5 +117,6 @@ if __name__ == "__main__":
     test_install_uninstall()
     test_plugin_files()
     test_hook_via_plugin()
+    test_build_keeps_both_closed_ids()
     test_serve_refuses_cross_site()
     print("ok")
