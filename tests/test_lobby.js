@@ -83,3 +83,13 @@ function fake() { var c = { calls: [], fillRect: function (x, y, w, h) { c.calls
   assert(!later.calls.some(function (k) { return k[0] === 'img'; }), 'no sprites before the sheet has loaded');
 });
 console.log('ok (sky)');
+
+// settle: a session file nobody rebuilt for an hour is shown as ended, its agents stopped; a fresh or ended one is left alone
+(function () {
+  function mk() { return { status: 'live', now: 1000, prun: true, agents: [{ id: 'a', running: true }, { id: 'b', running: false }, { id: 'w', kind: 'wf', running: true, wf: { state: 'running', status: 'running' } }] }; }
+  var fresh = L.settle(mk(), 1000 + 3599), old = L.settle(mk(), 1000 + 3600), done = L.settle({ status: 'ended', now: 0, agents: [] }, 1e9);
+  assert.deepStrictEqual(fresh, mk(), 'under an hour: untouched');
+  assert.strictEqual(old.status, 'ended'); assert(old.stale && !old.prun && !old.agents.some(function (a) { return a.running; }));
+  assert.strictEqual(old.agents[2].wf.state, 'failed'); assert(!done.stale, 'an ended session is not stale');
+  console.log('ok (settle)');
+})();

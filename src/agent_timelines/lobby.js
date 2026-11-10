@@ -60,7 +60,22 @@
     return t;
   }
 
-  var Lobby = { filter: filter, projects: projects, page: page, totals: totals };
+  // Session data is rebuilt only when a hook fires, so a session that died without SessionEnd stays "live" with
+  // running agents on disk. Apply the builder's LIVE_AGE rule to the file's age: an hour without a build = ended.
+  // d.stale tells the viewer to keep polling, so the page wakes up if the session is resumed. Changes d in place.
+  var LIVE_AGE = 3600; // keep equal to LIVE_AGE in timeline.py
+  function settle(d, now) {
+    if (!d || d.status !== 'live' || !(now - d.now >= LIVE_AGE)) return d;
+    d.status = 'ended'; d.stale = true; d.prun = false;
+    (d.agents || []).forEach(function (a) {
+      if (!a.running) return;
+      a.running = false;
+      if (a.wf) { a.wf.state = 'failed'; a.wf.status = 'no result recorded'; } // what the builder says of a run with no result file
+    });
+    return d;
+  }
+
+  var Lobby = { filter: filter, projects: projects, page: page, totals: totals, settle: settle };
   if (typeof module !== 'undefined' && module.exports) module.exports = Lobby;
   root.Lobby = Lobby;
 })(typeof window !== 'undefined' ? window : this);

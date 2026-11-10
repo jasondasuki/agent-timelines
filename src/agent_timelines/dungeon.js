@@ -347,6 +347,32 @@
   }
 
   // Light for each kind of fx: [radius in cells, strength 0..1, colour "r,g,b", dx, dy of the source inside its cell].
+  // A room that appears while you watch is not just there: its corridor is dug cell by cell from the parent's door,
+  // then the room fades in from the dark in 4 steps. hidden() is the pure part: for a room born `age` ms ago,
+  // the corridor cells not dug yet and how dark the room still is (1..0).
+  var DIG_MS = 40, DIG_MAX = 800, FADE_MS = 480;
+  function hidden(d, id, age) {
+    var pa = d.paths.filter(function (p) { return p.to === id; })[0], L = pa ? pa.cells.length : 0, per = L ? Math.min(DIG_MS, DIG_MAX / L) : 0;
+    var f = (age - L * per) / FADE_MS;
+    return { cells: L ? pa.cells.slice(Math.max(0, Math.floor(age / per))) : [], dark: f >= 1 ? 0 : f <= 0 ? 1 : 1 - Math.floor(f * 4) / 4 };
+  }
+  // Drawn last, over the light: actors carry born (Actors.stamp); -Infinity = it was there when you first looked.
+  function reveal(ctx, d, scale, now, actors) {
+    var S = 16 * scale, rooms = {};
+    d.rooms.forEach(function (q) { rooms[q.id] = q; });
+    ctx.save(); ctx.fillStyle = VOID;
+    actors.forEach(function (a) {
+      var q = rooms[a.id], age = now - a.born;
+      if (!q || !(age < DIG_MAX + FADE_MS)) return;
+      var h = hidden(d, a.id, age);
+      ctx.globalAlpha = 1; // an undug cell hides its walls too (one cell round it, two above for the wall face and cap)
+      h.cells.forEach(function (c) { ctx.fillRect((c[0] - 1 - d.ox) * S, (c[1] - 2 - d.oy) * S, 3 * S, 4 * S); });
+      ctx.globalAlpha = h.dark;
+      ctx.fillRect((q.x - 1 - d.ox) * S, (q.y - 2 - d.oy) * S, (q.w + 2) * S, (q.h + 3) * S);
+    });
+    ctx.restore();
+  }
+
   var LIGHT = { torch: [3, 0.9, '255,140,50', 0.5, 0.6], hearth: [4.8, 1, '255,120,40', 1, 0.9], lamp: [6.5, 0.45, '255,190,110', 0.5, 0.5],
     candle: [2, 0.8, '255,190,90', 0.5, 0.2], candelabra: [2.5, 0.85, '255,190,90', 0.5, 0.2] }; // rune, gold and wisp glow by themselves: a pool at the room's centre would light the monster
   var GL = 8; // light-map pixels per cell: the dark is drawn small and scaled up, so its edges are blocky like the art
@@ -425,7 +451,7 @@
     });
   }
 
-  var Dungeon = { generate: generate, render: render, glow: glow, prng: prng, COLS: COLS, THEMES: THEMES, T: {
+  var Dungeon = { generate: generate, render: render, glow: glow, reveal: reveal, hidden: hidden, prng: prng, COLS: COLS, THEMES: THEMES, T: {
     FLOOR: FLOOR, CORRIDOR: CORRIDOR, DOOR: DOOR, WALL: WALL, WALL_GRATE: WALL_GRATE, WALL_TOP: WALL_TOP, WALK: WALK,
     BANNER: BANNER, HEARTH_L: HEARTH_L, TABLE: TABLE, CABINET: CABINET } };
   if (typeof module !== 'undefined' && module.exports) module.exports = Dungeon;

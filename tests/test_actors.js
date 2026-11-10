@@ -107,3 +107,11 @@ A.stamp([g2], m2, 3000);
 assert.strictEqual(g2.state, 'cast'); assert.strictEqual(g2.walk, w1, 'guild master walk survives idle -> cast');
 assert(g2.free && Object.keys(g2.free).length > 20, 'guild master roams the hall while casting too');
 console.log('ok (guild master)');
+
+// a job that ends during the walk in keeps its walk and its birth time (a replay runs faster than a hero walks)
+more[16].running = false;
+var n16 = A.place('s1', d3, more).filter(function (a) { return a.id === 'n16'; });
+A.stamp(n16, mem, 9100);
+assert.strictEqual(n16[0].state, 'win'); assert.strictEqual(n16[0].trip, by3.n16.trip, 'the walk in survives the state change');
+assert.strictEqual(n16[0].born, 9000); assert.strictEqual(by3.n1.born, -Infinity, 'a room seen on the first look was always there');
+console.log('ok (short job)');
