@@ -5,7 +5,8 @@ var WALK = D.T.WALK, SIZE = { td: 12 * 11, ob: 48 * 22 }; // sheet cell counts
 
 function tree(n, parentOf) {
   var a = [];
-  for (var i = 0; i < n; i++) a.push({ id: i ? 'n' + i : 'main', parent: i ? 'n' + parentOf(i) : null });
+  var tiers = ['executor', 'scanner', 'plan', 'writer', 'runner', 'mystery']; // one room theme each; every 7th node is a workflow
+  for (var i = 0; i < n; i++) a.push({ id: i ? 'n' + i : 'main', parent: i ? 'n' + parentOf(i) : null, tier: tiers[i % 6], kind: i % 7 === 6 ? 'wf' : undefined });
   a[0].parent = null;
   for (i = 1; i < n; i++) if (a[i].parent === 'n0') a[i].parent = 'main';
   return a;
@@ -86,6 +87,19 @@ Object.keys(trees).forEach(function (name) {
   var hall = d.rooms[0], has = {};
   d.rooms.slice(1).forEach(function (r) { assert(r.w < hall.w && r.h < hall.h, 'hall not largest'); });
   d.deco.forEach(function (e) { if (e.x >= hall.x - 1 && e.x <= hall.x + hall.w && e.y >= hall.y - 1 && e.y < hall.y + hall.h) has[e.idx] = 1; });
-  ['BANNER', 'HEARTH_L', 'TABLE', 'CABINET', 'OB_RUG'].forEach(function (n) { assert(has[D.T[n]], 'hall lacks ' + n); });
+  ['BANNER', 'HEARTH_L', 'TABLE', 'CABINET'].forEach(function (n) { assert(has[D.T[n]], 'hall lacks ' + n); });
+  assert(hall.rug && hall.rug.x > hall.x && hall.rug.x + hall.rug.w < hall.x + hall.w, 'hall lacks its carpet');
+  // themes: the hall, then one per kind of agent; fixtures hang on a brick wall face of their own room, never on a door
+  var themes = {};
+  d.rooms.forEach(function (r, i) { assert(D.THEMES[r.theme], 'theme ' + r.theme); assert.strictEqual(r.theme === 'hall', !i); themes[r.theme] = 1; });
+  assert.strictEqual(Object.keys(themes).length, Object.keys(D.THEMES).length, name + ' uses every theme');
+  var lit = {};
+  d.fx.forEach(function (e) {
+    var r = d.rooms[e.room], t = d.tiles[e.y - d.oy][e.x - d.ox];
+    assert(e.x >= r.x && e.x < r.x + r.w && e.y >= r.y - 1 && e.y < r.y + r.h, 'fx outside its room');
+    if (e.k === 'torch' || e.k === 'spr' || e.k === 'hearth') assert(t === D.T.WALL || t === D.T.WALL_GRATE, e.k + ' not on a wall face');
+    if (e.k !== 'spr') lit[e.room] = 1;
+  });
+  d.rooms.forEach(function (r, i) { assert(lit[i], 'room ' + r.id + ' has no light'); });
 });
 console.log('ok');

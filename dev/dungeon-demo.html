@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <title>dungeon demo</title>
 <style>
-  body { margin: 0; background: #1b1b2a; color: #ddd; font: 14px monospace; }
+  body { margin: 0; background: #0d0912; color: #ddd; font: 14px monospace; }
   #bar { padding: 8px; position: sticky; top: 0; background: #1b1b2a; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
   input[type=number] { width: 4em; }
   canvas { image-rendering: pixelated; display: block; }
@@ -33,6 +33,7 @@
     var r = Dungeon.prng($('seed').value + '/sim/' + i), n = { id: 'a' + i, parent: nodes[(i * 2654435761 >>> 0) % i].id, tier: TIERS[r() * TIERS.length | 0], flags: [] };
     if (r() < 0.1) n.kind = 'wf';
     n.berserk = r() < 0.12; n.fails = r() < 0.3;
+    if (i > 1 && r() < 0.25) n.cont = nodes[i - 1].id; // continues the previous agent's handoff: walks in with the key
     return n;
   }
   function sync() { // make nodes match the controls: grow or trim the list, then set who is working
@@ -70,6 +71,7 @@
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(bg, 0, 0);
     Actors.draw(ctx, d, actors, sheets, s, now, STILL);
+    Dungeon.glow(ctx, d, s, now, STILL, actors);
     requestAnimationFrame(frame);
   }
 

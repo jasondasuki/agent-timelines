@@ -86,8 +86,8 @@ border:0;box-shadow:inset -2px -2px 0 rgba(0,0,0,.25);cursor:help;vertical-align
 #tip b{color:var(--gold);font-weight:400}
 .views{display:inline-flex;gap:6px;margin-left:12px;vertical-align:middle}
 #mapbox{display:flex;flex-direction:column;padding:8px;max-height:calc(100vh - 210px);min-height:280px}#mapbox[hidden],#graph[hidden]{display:none}
-.mapbar{display:flex;gap:6px;align-items:center;margin-bottom:8px}.mapbar .mut{font-size:8px;min-width:3em;text-align:center}
-#mapscroll{overflow:auto;flex:1;min-height:0;background:var(--edge)}#map{display:block;image-rendering:pixelated;cursor:pointer}
+.mapbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}#rt{flex:1 1 140px;min-width:100px;accent-color:var(--gold)}#rl{min-width:11em;text-align:left!important}.mapbar .mut{font-size:8px;min-width:3em;text-align:center}
+#mapscroll{overflow:auto;flex:1;min-height:0;background:#0d0912}#map{display:block;image-rendering:pixelated}
 /* ---- timeline (Gantt) view: one row per agent, one bar per agent on a shared clock */
 #gantt{--lw:180px;display:flex;flex-direction:column;padding:8px;max-height:calc(100vh - 210px);min-height:280px}
 #gscroll{overflow:auto;flex:1;min-height:0}#ginner{position:relative;min-width:100%}
@@ -110,7 +110,8 @@ border:0;box-shadow:inset -2px -2px 0 rgba(0,0,0,.25);cursor:help;vertical-align
 .gline{position:absolute;top:22px;bottom:0;width:2px;background:repeating-linear-gradient(180deg,var(--hi) 0 4px,transparent 4px 8px)}
 .gline.now{background:var(--gold);width:3px}
 @media (max-width:520px){#gantt{--lw:104px}}
-/* ---- lobby: an old-school title screen + server browser */
+/* ---- lobby: an old-school title screen + server browser, over a pixel sky (sky.js) */
+body.lobby{background:none}.lobby .blink,.lobby .hint{color:#fff3b0;text-shadow:2px 2px 0 #1b1424}#sky{position:fixed;inset:0;width:100vw;height:100vh;z-index:-1;image-rendering:pixelated}
 body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:30;background:repeating-linear-gradient(rgba(0,0,0,.16) 0 2px,transparent 2px 4px)}
 #lobby{max-width:980px;margin:0 auto;padding:8px 0 24px;text-align:center}
 .logo{font-size:32px;line-height:1.25;margin:18px 0 6px;color:var(--gold);text-shadow:4px 4px 0 #b0410e,8px 8px 0 var(--edge)}
@@ -124,19 +125,29 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 .lrow{width:100%;text-align:left;background:none;border:0;border-bottom:2px dashed var(--panel2);cursor:pointer}
 .lrow:hover,.lrow.on{background:var(--panel2)}.lrow.on .cur{visibility:visible}.cur{visibility:hidden;color:var(--gold);animation:blink .6s steps(1) infinite}
 .lrow:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
+/* hall of records: one short line per session (name, heroes, cost, issues if any, when); the rest is in the tooltip */
+.lrow.rec{grid-template-columns:14px minmax(0,1fr) 52px 84px 48px 70px;padding:3px 6px}.lrow.rec .sid{display:inline;margin:0 0 0 10px}
 .lrow b{color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lrow .sid{display:block;color:var(--mut);font-weight:400;margin-top:2px}
 .lrow .n{display:inline-flex;align-items:center;gap:4px}.on-air{color:var(--ok)}.on-air::before{content:"";display:inline-block;width:8px;height:8px;background:var(--ok);margin-right:5px;animation:blink 1s steps(1) infinite}
 .ltools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:8px}
 .ltools input,.ltools select{font:inherit;font-size:8px;color:var(--fg);background:var(--panel2);border:3px solid var(--edge);padding:6px 8px;min-width:0}
 .ltools input{flex:1 1 160px}.ltools select{flex:0 1 220px;max-width:100%}
 .ltools input:focus-visible,.ltools select:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+#ledger{margin:0 0 12px;padding-bottom:10px;border-bottom:3px solid var(--edge)}#ledger .stats{margin-top:0}
+.lcharts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:10px 24px;margin-top:8px;font-size:8px}.lcharts h2{margin:0 0 6px}
+@media (max-width:760px){.lcharts{grid-template-columns:minmax(0,1fr)}}
+.dbars{display:flex;align-items:flex-end;gap:6px}.dbar{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--mut)}
+.dbar i{display:block;width:100%;min-height:2px;background:var(--gold);box-shadow:0 0 0 2px var(--edge)}.dbar.now{color:var(--gold)}
+.pbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(40px,1fr) 60px;gap:8px;align-items:center;width:100%;padding:4px 2px;background:none;border:0;cursor:pointer;text-align:left;font-size:8px}
+.pbar:hover,.pbar[aria-pressed=true]{background:var(--panel2)}.pbar:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
+.pbar b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}.pbar i{display:block;height:8px;min-width:2px;background:var(--gold);box-shadow:0 0 0 2px var(--edge)}.pbar span{text-align:right;color:var(--mut)}
 .pager{display:flex;gap:10px;align-items:center;justify-content:center;margin:10px 0 2px;font-size:8px}
 .btn:disabled{opacity:.4;cursor:default}
 .empty{padding:14px 6px;color:var(--mut);font-size:8px;line-height:2}
 #lparty{margin-top:14px;padding:12px 14px;text-align:left;min-height:96px}#lparty .row{gap:4px;margin:8px 0}
 #lparty .hero{animation:idle 1.6s steps(1) infinite}#lparty .run{animation:walk .5s steps(1) infinite}
 .hint{color:var(--mut);font-size:8px;margin-top:14px}
-@media (max-width:760px){.lrow,.lhead{grid-template-columns:14px minmax(0,1fr) 56px 64px 70px}.lrow>:nth-child(n+6),.lhead>:nth-child(n+6){display:none}.logo{font-size:24px}.logo span{font-size:16px}}
+@media (max-width:760px){.lrow,.lhead{grid-template-columns:14px minmax(0,1fr) 56px 64px 70px}.lrow.rec{grid-template-columns:14px minmax(0,1fr) 44px 72px 40px}.lrow>:nth-child(n+6),.lhead>:nth-child(n+6){display:none}.logo{font-size:24px}.logo span{font-size:16px}}
 @keyframes across{to{transform:translateX(calc(100vw + 128px))}}
 @keyframes blink{50%{opacity:0}}
 @keyframes idle{0%{transform:none}50%{transform:translateY(-2px)}}
@@ -147,9 +158,9 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 @keyframes slide{from{transform:translateX(12px);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style></head><body>
-<section id="lobby" hidden><h1 class="logo">AGENT<br><span>TIMELINES</span></h1><div class="march" id="march" aria-hidden="true"></div>
+<canvas id="sky" aria-hidden="true" hidden></canvas><section id="lobby" hidden><h1 class="logo">AGENT<br><span>TIMELINES</span></h1><div class="march" id="march" aria-hidden="true"></div>
 <p class="blink">SELECT A DUNGEON</p>
-<div class="px lbox"><div class="ltools"><input id="lq" type="search" placeholder="SEARCH" aria-label="Search sessions" autocomplete="off"><select id="lproj" aria-label="Project"></select><span id="lcount" class="mut"></span><button class="btn" id="lclear" type="button" hidden>CLEAR</button></div>
+<div class="px lbox"><div class="ltools"><input id="lq" type="search" placeholder="SEARCH" aria-label="Search sessions" autocomplete="off"><select id="lproj" aria-label="Project"></select><span id="lcount" class="mut"></span><button class="btn" id="lclear" type="button" hidden>CLEAR</button></div><div id="ledger"></div>
 <h2>LIVE DUNGEONS</h2><div class="lhead" aria-hidden="true"><span></span><span>DUNGEON</span><span>PARTY</span><span>QUESTING</span><span>COST</span><span>ISSUES</span><span>STATUS</span><span>SEEN</span></div>
 <div id="lv"></div><h2>HALL OF RECORDS</h2><div id="hr"></div>
 <div class="pager" id="lpager" hidden><button class="btn" id="lprev" type="button">&lt; PREV</button><span id="lpage" class="mut" aria-live="polite"></span><button class="btn" id="lnext" type="button">NEXT &gt;</button></div></div>
@@ -158,11 +169,11 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 <div class="stats" id="stats"></div><div id="meta" class="meta mut"></div><div id="xp" class="xp" title="Gold by model family"></div><div id="err" class="err" hidden></div>
 <details><summary>How to read the dungeon</summary><dl id="legend"></dl></details>
 <details><summary>Cost by model</summary><dl id="costs"></dl></details></header>
-<div class="wrap" id="main"><div id="graph" class="px" tabindex="0" aria-label="Party tree: the guild master on the left, the heroes they sent out to the right"></div><div id="mapbox" class="px" hidden><div class="mapbar"><button class="btn" id="zout" type="button" aria-label="Zoom out">−</button><span id="zl" class="mut">2X</span><button class="btn" id="zin" type="button" aria-label="Zoom in">+</button><span class="mut">click a hero for details</span></div><div id="mapscroll"><canvas id="map" aria-label="Dungeon map: one room per agent; click a character for details"></canvas></div></div>
+<div class="wrap" id="main"><div id="graph" class="px" tabindex="0" aria-label="Party tree: the guild master on the left, the heroes they sent out to the right"></div><div id="mapbox" class="px" hidden><div class="mapbar"><button class="btn" id="zout" type="button" aria-label="Zoom out">−</button><span id="zl" class="mut">2X</span><button class="btn" id="zin" type="button" aria-label="Zoom in">+</button><button class="btn" id="rplay" type="button" aria-pressed="false">REPLAY</button><input id="rt" type="range" step="1" aria-label="Replay: the map at an earlier moment of the session"><span id="rl" class="mut">NOW</span><span class="mut">hover a room, click for details</span></div><div id="mapscroll"><canvas id="map" aria-label="Dungeon map: one room per agent; hover a room for its agent, click it for details"></canvas></div></div>
 <div id="gantt" class="px" hidden><div class="mapbar"><button class="btn" id="gout" type="button" aria-label="Zoom out">−</button><span id="gzl" class="mut">1X</span><button class="btn" id="gin" type="button" aria-label="Zoom in">+</button><button class="btn" id="gfit" type="button">FIT</button><span class="mut">click a bar for details</span></div><div id="gscroll"><div id="ginner"><div class="gaxis" id="gaxis" aria-hidden="true"></div><div id="grows" role="group" aria-label="Agents on a shared time axis"></div><div id="gcols" aria-hidden="true"></div></div></div></div>
 <aside id="side" class="px" aria-label="Quest log and party"><h2>QUEST LOG</h2><ol id="feed"></ol><details><summary>Whole party</summary><ol id="list"></ol></details></aside></div>
 <div id="tip" class="px" role="tooltip" hidden></div><aside id="panel" class="px" role="dialog" aria-label="Hero details" hidden><button id="px" type="button" aria-label="Close">×</button><div id="pb"></div></aside>
-<script src="dungeon.js"></script><script src="actors.js"></script><script src="lobby.js"></script><script src="gantt.js"></script>
+<script src="dungeon.js"></script><script src="actors.js"></script><script src="lobby.js"></script><script src="gantt.js"></script><script src="sky.js"></script>
 <script>
 (function(){"use strict";
 var SID=(/[?&]sid=([\w-]+)/.exec(location.search)||[])[1],INDEX=!SID,DATA=INDEX?"index.data.js":SID+".data.js";
@@ -287,7 +298,7 @@ if(b.tagName==="BUTTON"){b.type="button";b.addEventListener("click",function(){o
 li.append(b);return li}));
 $("list").replaceChildren.apply($("list"),[P].concat(ags).map(function(n){var li=el("li"),b=el("button"),st=state(d,n);b.type="button";
 b.append(spr(sprite(n,st),1),el("span",null,name(n)+" · "+st[1]+" · "+(n.desc||"").slice(0,40)));b.addEventListener("click",function(){openPanel(n.id)});li.append(b);return li}));
-if(VIEW==="time")drawGantt(d);if(sel)fill();first=false;if(VIEW==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
+if(VIEW==="time")drawGantt(d);if(sel)fill();syncReplay();first=false;if(VIEW==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
 
 function famUsd(d,f){return d.cost.models.reduce(function(k,m){return k+(m.fam===f?m.usd:0)},0)}
 function costs(d){var dl=$("costs"),c=d.cost;dl.replaceChildren();
@@ -331,6 +342,7 @@ function legend(){var dl=$("legend");
 [[HERO.main,"Guild master = the main session. Heroes by class: knight executor, rogue scanner, sage planner, bard writer, barbarian runner, viking other."],
 [HERO.workflow,"Treasure run = a Workflow run (a mimic while it runs)."],[HERO.ghost,"Ghost = berserk: ignored the tool limit."],
 [ICON.heart,"Hearts (only when a tool limit is configured) = tool budget: 5 hearts is the tool-call limit; one is lost per fifth used."],[ICON.coin,"Gold = input-equivalent tokens (input 1, cache write 1.25, cache read 0.1, output 5). $ = API list price of the same tokens."],
+[HERO.executor,"Map view: a room's look follows the hero's class: armory knight, library rogue, lab sage, study bard, sand pit barbarian, vault treasure run, crypt for the rest. A room burns brighter while its hero is questing; green light = the run failed or the hero went berserk. A new hero walks in from the room of whoever sent it; one carrying a key continues a handoff and walks in from the room that handed off. REPLAY plays the session back on the map; drag the slider to see any moment."],
 [ICON.hourglass,"Timeline view: one bar per agent on a shared clock, rows in party-tree order; a striped bar is still running, a key or skull after a bar is a handoff or an issue. Zoom with + and -."],
 [ICON.key,"Key = a handoff: TO #6 on the one that stopped, FROM #4 on the one that continues. KEY DROPPED = nobody continued."],
 [ICON.skull,"Skull chips are issues; grey chips are info. Name colour = model family that ran; 'x?/y?' = requested, not seen running yet."]]
@@ -342,11 +354,13 @@ function lobbySpr(p){return p[3]&&p[1]!=="wf"?HERO.ghost:p[1]==="wf"?(p[2]?HERO.
 function ago(t){var s=Date.now()/1000-t;return s<90?"NOW":s<3600?Math.floor(s/60)+"M AGO":s<86400?Math.floor(s/3600)+"H AGO":Math.floor(s/86400)+"D AGO"}
 function dname(r){return (String(r.cwd||"?").split("/").pop()||"/").toUpperCase()}
 function join(id){location.href="index.html?sid="+encodeURIComponent(id)}
-function lrow(r){var b=el("button","lrow"+(r.id===lsel?" on":""));b.type="button";b.dataset.id=r.id;if(r.id===lsel)b.setAttribute("aria-current","true");
-var nm=el("b",null,dname(r));nm.append(el("span","sid",r.id.slice(0,8)+(r.planner?" · "+r.planner:"")));
+function lrow(r){var rec=!r.live,b=el("button","lrow"+(rec?" rec":"")+(r.id===lsel?" on":""));b.type="button";b.dataset.id=r.id;if(r.id===lsel)b.setAttribute("aria-current","true");
+var nm=el("b",null,dname(r));nm.append(el("span","sid",r.id.slice(0,8)+(r.planner&&!rec?" · "+r.planner:"")));
 function n(icon,v,c,tip){var x=el("span","n"+(c?" "+c:""));x.append(spr(icon,1),String(v));if(tip)x.title=tip;return x}
-b.append(el("span","cur",">"),nm,n(HERO.executor,r.heroes),n(ICON.hourglass,r.running),n(ICON.coin,usd(r.usd),null,"Gold "+ftok(r.gold||0)),n(ICON.skull,r.issues,r.issues?"bad":null),
-el("span",r.live?"on-air":"mut",r.live?"LIVE":"ENDED"),el("span","mut",ago(r.updated)));
+if(rec){b.title=r.cwd+" · "+r.id+(r.planner?" · "+r.planner:"")+" · gold "+ftok(r.gold||0);
+b.append(el("span","cur",">"),nm,n(HERO.executor,r.heroes),n(ICON.coin,usd(r.usd)),r.issues?n(ICON.skull,r.issues,"bad"):el("span"),el("span","mut",ago(r.updated)))}
+else b.append(el("span","cur",">"),nm,n(HERO.executor,r.heroes),n(ICON.hourglass,r.running),n(ICON.coin,usd(r.usd),null,"Gold "+ftok(r.gold||0)),n(ICON.skull,r.issues,r.issues?"bad":null),
+el("span","on-air","LIVE"),el("span","mut",ago(r.updated)));
 b.setAttribute("aria-label",dname(r)+", "+(r.live?"live":"ended")+", "+plural(r.heroes,"agent")+", "+r.running+" working, "+plural(r.issues,"issue")+". Press Enter to join.");
 b.addEventListener("mouseenter",function(){pickRow(r.id)});b.addEventListener("focus",function(){pickRow(r.id)});b.addEventListener("click",function(){join(r.id)});return b}
 function empty(t){return el("div","empty",t)}
@@ -358,6 +372,20 @@ var row=el("div","row");row.append(spr(HERO.main,3,"hero"+(r.live&&r.running?" r
 r.party.forEach(function(p,i){var e=spr(lobbySpr(p),3,"hero"+(p[2]?" run":""));e.style.animationDelay=(i%4)*0.2+"s";row.append(e)});
 if(r.heroes+r.workflows>r.party.length)row.append(el("span","mut","+"+(r.heroes+r.workflows-r.party.length)));
 box.replaceChildren(el("h2",null,"PARTY · "+dname(r)),row,el("div","mut",(r.last?"LAST: "+r.last:"No events yet")));}
+/* ledger: what the listed sessions cost, by day and by project (Lobby.totals); it follows the search and project filter */
+function drawLedger(rows){var t=Lobby.totals(rows,Date.now()/1000),st=el("div","stats"),ch=el("div","lcharts"),dw=el("div"),pw=el("div"),db=el("div","dbars"),
+note="API list price of the sessions listed below ("+plural(t.n,"session")+"; the lobby keeps the most recent ones). A session counts on the day it was last active. A subscription plan is not billed per token.",
+dmax=Math.max.apply(null,t.days.map(function(d){return d.usd}))||1,pmax=t.top.length?t.top[0].usd||1:1;
+st.append(stat(ICON.coin,usd(t.today),"today",note),stat(ICON.coin,usd(t.week),"7 days",note),stat(ICON.coin,usd(t.usd),"listed",note),
+stat(HERO.executor,String(t.heroes),"heroes","subagents spawned in the listed sessions"),stat(ICON.skull,String(t.issues),"issues","red flags in the listed sessions",t.issues?"bad":null));
+t.days.forEach(function(d,i){var c=el("div","dbar"+(i===6?" now":"")),b=el("i"),dt=new Date(d.t*1000);b.style.height=Math.round(40*d.usd/dmax)+"px";
+c.title=dt.toLocaleDateString()+": "+usd(d.usd)+" · "+plural(d.n,"session");c.append(el("span",null,d.usd?usd(d.usd):""),b,el("span",null,["SU","MO","TU","WE","TH","FR","SA"][dt.getDay()]));db.append(c)});
+dw.append(el("h2",null,"LAST 7 DAYS"),db);pw.append(el("h2",null,"TOP PROJECTS"));
+t.top.forEach(function(p){var b=el("button","pbar"),bar=el("i");b.type="button";b.title=p.cwd+" · "+plural(p.n,"session")+" · click to filter";b.setAttribute("aria-pressed",String(LPROJ===p.cwd));
+bar.style.width=Math.round(100*p.usd/pmax)+"%";b.append(el("b",null,p.name.toUpperCase()),bar,el("span",null,usd(p.usd)));
+b.addEventListener("click",function(){LPROJ=LPROJ===p.cwd?"":p.cwd;lobbyFilter()});pw.append(b)});
+if(!t.top.length)pw.append(empty("NO SESSIONS."));
+ch.append(dw,pw);$("ledger").replaceChildren(st,ch)}
 var LQ=ssGet("tlQ"),LPROJ=ssGet("tlProj"),LPAGE=0,PAGE=15,LPK=null;
 function drawLobby(){
 var rows=idx.sessions||[],ps=Lobby.projects(rows),pk=JSON.stringify(ps),f=document.activeElement&&document.activeElement.classList.contains("lrow");
@@ -373,7 +401,7 @@ $("hr").replaceChildren.apply($("hr"),pg.items.length?pg.items.map(lrow):[empty(
 $("lcount").textContent=act?vis.length+" OF "+rows.length:rows.length+(rows.length===1?" SESSION":" SESSIONS");$("lclear").hidden=!act;
 $("lpager").hidden=pg.pages<2;$("lpage").textContent="PAGE "+(pg.page+1)+" OF "+pg.pages;$("lprev").disabled=pg.page<1;$("lnext").disabled=pg.page>=pg.pages-1;
 if(f){var b=document.querySelector('.lrow[data-id="'+CSS.escape(lsel)+'"]');if(b)b.focus()}
-drawParty();live=true}
+drawLedger(vis);drawParty();live=true}
 function lobbyFilter(){LPAGE=0;ssSet("tlQ",LQ);ssSet("tlProj",LPROJ);if(idx)drawLobby()}
 function lobbyKeys(e){var t=e.target.tagName;if(!INDEX||t==="INPUT"||t==="SELECT")return;
 if(e.key==="/"&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();$("lq").focus();return}
@@ -411,8 +439,17 @@ document.addEventListener("click",function(e){if(e.target.closest&&e.target.clos
 /* ---- map view: the same session as a dungeon (dungeon.js lays out rooms, actors.js draws the characters) */
 var VIEW=["map","time"].indexOf(lsGet("tlView"))>=0?lsGet("tlView"):"chart",GZ=[1,2,4,8],gz=0,RMQ=matchMedia("(prefers-reduced-motion: reduce)").matches,SHEETS={td:new Image(),ob:new Image()},M={scale:2,mem:{},shape:"",sid:null,raf:0};
 SHEETS.td.src="tiny-dungeon.png";SHEETS.ob.src="one-bit.png";
-function mapNodes(d){var run=d.agents.some(function(a){return a.running&&a.kind!=="wf"});
-return [{id:"main",parent:null,running:run||d.prun,flags:[]}].concat(d.agents.map(function(a){return {id:a.id,parent:a.parent,tier:a.tier,kind:a.kind,running:a.running,flags:a.flags,wf:a.wf}}))}
+/* replay: M.t = a moment of the session (null = now). Only the map follows it. Agents are sorted by start, so the ones
+   already spawned at M.t are a prefix of the list and the dungeon is the same one, just smaller. */
+function span(d){return [d.t0,d.status==="live"?Math.max(d.now,Date.now()/1000):d.t1||d.now]}
+function mapNodes(d){var T=M.t,ags=T==null?d.agents:d.agents.filter(function(a){return a.start==null||a.start<=T});
+function on(a){return T==null||a.end==null?a.running:a.end>T}
+return [{id:"main",parent:null,running:ags.some(function(a){return on(a)&&a.kind!=="wf"})||(T==null&&d.prun),flags:[]}].concat(ags.map(function(a){
+return {id:a.id,parent:a.parent,cont:a.cont,tier:a.tier,kind:a.kind,running:on(a),flags:a.flags,wf:a.wf&&on(a)&&!a.running?{state:"running"}:a.wf}}))}
+function setPlay(b){M.play=b;$("rplay").textContent=b?"PAUSE":"REPLAY";$("rplay").setAttribute("aria-pressed",String(b))}
+function syncReplay(){if(!cur||cur.t0==null)return;var sp=span(cur),r=$("rt");r.min=Math.floor(sp[0]);r.max=Math.ceil(sp[1]);r.value=M.t==null?r.max:M.t;
+$("rl").textContent=M.t==null?(cur.status==="live"?"NOW":"END"):hms(M.t)+" · +"+fdur(M.t-sp[0])}
+function seek(t){if(t!=null&&(M.t==null||t<M.t))M.mem={};M.t=t;syncReplay()}  /* going back: forget who was seen, so nobody celebrates in reverse and a later replay walks them in again */
 function setView(v){VIEW=v;lsSet(v,"tlView");$("graph").hidden=v!=="chart";$("mapbox").hidden=v!=="map";$("gantt").hidden=v!=="time";
 $("vchart").setAttribute("aria-pressed",String(v==="chart"));$("vmap").setAttribute("aria-pressed",String(v==="map"));$("vtime").setAttribute("aria-pressed",String(v==="time"));
 if(v==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame);if(v==="time"&&cur)drawGantt(cur)}
@@ -440,8 +477,11 @@ if(cur)drawGantt(cur);sc.scrollLeft=c*$("ginner").offsetWidth-sc.clientWidth/2}
 function mapFrame(now){
 if(VIEW!=="map"||!cur){M.raf=0;return}
 M.raf=requestAnimationFrame(mapFrame);
+if(M.sid!==cur.id){M.t=null;setPlay(false);syncReplay()}
+if(M.play){var sp=span(cur),nt=M.t+Math.min(100,now-(M.last||now))/1000*Math.max(1,(sp[1]-sp[0])/45);  /* a whole session in about 45 s, never slower than real time */
+if(nt>=sp[1]){nt=null;setPlay(false)}M.t=nt;syncReplay()}M.last=now;
 if(!SHEETS.td.complete||!SHEETS.ob.complete||!window.Dungeon||!window.Actors)return;
-var nodes=mapNodes(cur),sc=$("mapscroll"),cv=$("map"),s=M.scale,key=nodes.map(function(n){return n.id+(n.running?"*":"")}).join();
+var nodes=M.nodes=mapNodes(cur),sc=$("mapscroll"),cv=$("map"),s=M.scale,key=nodes.map(function(n){return n.id+(n.running?"*":"")}).join();
 if(M.sid!==cur.id){M.sid=cur.id;M.d=null;M.mem={};M.shape=""}
 if(key!==M.shape||M.bs!==s){
 if(!M.d||M.d.rooms.length!==nodes.length||M.bs!==s){
@@ -454,16 +494,25 @@ else{var h=d.rooms[0];sc.scrollLeft=(h.cx-d.ox)*16*s-sc.clientWidth/2;sc.scrollT
 M.d=d;M.bs=s}
 M.acts=Actors.place(cur.id,M.d,nodes);M.shape=key}
 Actors.stamp(M.acts,M.mem,now);
-var ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=false;ctx.drawImage(M.bg,0,0);Actors.draw(ctx,M.d,M.acts,SHEETS,s,now,RMQ);
+var ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=false;ctx.drawImage(M.bg,0,0);Actors.draw(ctx,M.d,M.acts,SHEETS,s,now,RMQ);Dungeon.glow(ctx,M.d,s,now,RMQ,M.acts);
 if(sel){var a=M.acts.filter(function(x){return x.id===sel})[0];if(a){var w=a.walk&&a.walk.at||[a.x,a.y];  /* gold frame on the selected hero */
 ctx.strokeStyle="#ffd23f";ctx.lineWidth=s;ctx.strokeRect((w[0]-M.d.ox)*16*s-s,(w[1]-M.d.oy)*16*s-s,16*s+2*s,16*s+2*s)}}}
 function zoom(dz){var sc=$("mapscroll"),cv=$("map"),n=Math.max(1,Math.min(6,M.scale+dz));if(n===M.scale)return;
 M.center=[(sc.scrollLeft+sc.clientWidth/2)/(cv.width||1),(sc.scrollTop+sc.clientHeight/2)/(cv.height||1)];M.scale=n;$("zl").textContent=n+"X"}
-$("map").addEventListener("click",function(e){if(!M.d)return;var r=this.getBoundingClientRect(),S=16*M.scale,x=Math.floor((e.clientX-r.left)/S)+M.d.ox,y=Math.floor((e.clientY-r.top)/S)+M.d.oy;
-var hit=M.acts.filter(function(a){var w=a.walk&&a.walk.at||[a.x,a.y];return (w[0]===x&&w[1]===y)||(a.fx===x&&a.fy===y)||(a.x===x&&a.y===y)})[0];if(hit)openPanel(hit.id)});
+/* the whole room (floor and the wall face above it) stands for its agent: hover names it, click opens it */
+function roomAt(e){if(!M.d)return null;var r=$("map").getBoundingClientRect(),S=16*M.scale,x=Math.floor((e.clientX-r.left)/S)+M.d.ox,y=Math.floor((e.clientY-r.top)/S)+M.d.oy;
+var q=M.d.rooms.filter(function(q){return x>=q.x&&x<q.x+q.w&&y>=q.y-1&&y<q.y+q.h})[0];return q&&by[q.id]||null}
+$("map").addEventListener("click",function(e){var n=roomAt(e);if(n)openPanel(n.id)});
+$("map").addEventListener("mousemove",function(e){var n=roomAt(e),t=$("tip");this.style.cursor=n?"pointer":"default";if(!n){t.hidden=true;return}
+var mn=M.t!=null&&M.nodes.filter(function(x){return x.id===n.id})[0];  /* in a replay: the status at that moment */
+t.replaceChildren(el("b",null,name(n)+" · "+(mn?mn.running?"QUESTING":n.id==="main"?"RESTING":state(cur,n)[1]:state(cur,n)[1])),el("div",null,n.desc||"(no description)"));t.hidden=false;
+t.style.left=Math.max(8,Math.min(e.clientX+14,innerWidth-t.offsetWidth-8))+"px";t.style.top=(e.clientY+18+t.offsetHeight>innerHeight?e.clientY-t.offsetHeight-10:e.clientY+18)+"px"});
+$("map").addEventListener("mouseleave",function(){$("tip").hidden=true});
 $("vchart").addEventListener("click",function(){setView("chart")});$("vmap").addEventListener("click",function(){setView("map")});$("vtime").addEventListener("click",function(){setView("time")});
 $("gin").addEventListener("click",function(){gzoom(1)});$("gout").addEventListener("click",function(){gzoom(-1)});$("gfit").addEventListener("click",function(){gzoom(-gz)});
 $("grows").addEventListener("click",function(e){var r=e.target.closest(".grow");if(r)openPanel(r.dataset.id)});
+$("rt").addEventListener("input",function(){setPlay(false);seek(+this.value>=+this.max?null:+this.value)});
+$("rplay").addEventListener("click",function(){if(!cur||cur.t0==null)return;if(!M.play&&M.t==null)seek(span(cur)[0]);setPlay(!M.play)});
 $("zin").addEventListener("click",function(){zoom(1)});$("zout").addEventListener("click",function(){zoom(-1)});
 setView(VIEW);
 if(INDEX){$("lq").value=LQ;
@@ -472,6 +521,6 @@ $("lq").addEventListener("keydown",function(e){if(e.key==="Escape"&&this.value){
 $("lproj").addEventListener("change",function(){LPROJ=this.value;lobbyFilter()});
 $("lclear").addEventListener("click",function(){LQ=LPROJ="";$("lq").value="";lobbyFilter()});
 $("lprev").addEventListener("click",function(){LPAGE--;drawLobby()});$("lnext").addEventListener("click",function(){LPAGE++;drawLobby()});
-document.body.classList.add("lobby");$("lobby").hidden=false;$("hud").hidden=true;$("main").hidden=true;march();document.addEventListener("keydown",lobbyKeys)}
+document.body.classList.add("lobby");$("sky").hidden=false;Sky.start($("sky"),SHEETS.td);$("lobby").hidden=false;$("hud").hidden=true;$("main").hidden=true;march();document.addEventListener("keydown",lobbyKeys)}
 legend();poll()})();
 </script></body></html>

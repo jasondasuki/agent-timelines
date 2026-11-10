@@ -100,7 +100,7 @@ def test_tree_flags_running_and_files():
     assert pj["prompts"] == {"B": b["B"]["prompt"]} and "Continue from the handoff" in pj["prompts"]["B"]
     assert "Continue from the handoff" not in raw and all(a["prompt"] == "" for a in jd["agents"]) and by(jd)["B"]["brief"] == len(b["B"]["prompt"])
     html = open(os.path.join(od, "index.html")).read()
-    assert "innerHTML" not in html and "index.data.js" in html and 'src="lobby.js"' in html and 'src="gantt.js"' in html and {"lobby.js", "gantt.js"} <= set(tl.ASSETS)
+    assert "innerHTML" not in html and "index.data.js" in html and 'src="lobby.js"' in html and 'src="gantt.js"' in html and 'src="sky.js"' in html and {"lobby.js", "gantt.js", "sky.js"} <= set(tl.ASSETS)
     assert "prompts.js" in html and "TLP" in html and "replies" in pj and pj["replies"]["B"] == "done" and pj["replies"]["A"] == "HANDOFF /h/x.md"
     # a long multi-line final reply: teaser in the data file, full text in the prompts file, neither can close a script tag
     longr = "line one\n</script><b>x</b>\n" + "y" * 473

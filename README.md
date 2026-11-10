@@ -8,19 +8,26 @@ session works. Everything is read from your local transcripts; nothing leaves yo
 
 ![Chart view: the delegation tree as a party of heroes, with one hero's detail panel open](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/chart.jpg)
 
-- **Lobby**: your 200 most recent sessions as a retro game-server list (live dungeons + hall of records), with search, a project filter and
-  paging (`/` focuses the search box, left/right change the page).
+- **Lobby**: your 200 most recent sessions as a retro game-server list under a pixel night sky (a day sky in the light colour scheme).
+  Live dungeons get a full row; the hall of records is one short line per past session. There is search, a project filter and
+  paging (`/` focuses the search box, left/right change the page). A ledger on top sums what the listed sessions cost:
+  today, the last 7 days by day, and the costliest projects (click one to filter).
 - **Chart view**: the delegation tree as a party of heroes, with flags for rule breaks (no model set,
   model mismatch, ignored tool limit, unanswered handoff, …).
   Each card shows the agent's top tools and the start of its final reply; the detail panel lists every tool and the full report
   (a running agent shows what it is saying now).
 - **Timeline view**: one bar per agent on a shared clock, rows in party-tree order, so you can see who ran when and what overlapped.
   Running agents get a striped bar; zoom with + and -.
-- **Map view**: the same session as a procedurally generated dungeon. The main session is the guild master
-  in the guild hall; each agent has its own room and fights an enemy while it works, then celebrates.
+- **Map view**: the same session as a procedurally generated, torch-lit dungeon. The main session is the guild master
+  in the guild hall, casting over a pentagram while agents work; each agent has its own room and fights an enemy while it works, then celebrates.
+  - A room's look follows the agent's class: armory, library, lab, study, sand pit, vault for a workflow, crypt for the rest.
+  - Torches burn brighter while the agent works and turn green if the agent failed or ignored its tool limit.
+  - A new hero walks the corridors to its room, carrying a key if it continues a handoff.
+  - Hover a room for its agent, click it for details.
+  - REPLAY plays the whole session back on the map; drag the slider to see any moment.
 
-![Lobby: live dungeons and the hall of records](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/lobby.jpg)
-![Map view: a procedurally generated dungeon with one room per agent](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/map.jpg)
+![Lobby: the cost ledger, live dungeons and the hall of records under a night sky](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/lobby.jpg)
+![Map view: the guild hall and themed rooms by torchlight, with the replay slider](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/map.jpg)
 
 (The screenshots show a synthetic demo session.)
 

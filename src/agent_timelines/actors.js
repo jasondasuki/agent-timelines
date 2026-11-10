@@ -3,7 +3,9 @@
  * place() is pure (seed + dungeon + nodes -> actors); stamp() remembers when each state began; draw() runs per frame.
  * Actors not working (idle guild master, a hero after its victory) wander their room's free cells: never onto props,
  * doors, corridors or the fallen enemy. walk() holds that motion and is canvas-free so it can be tested.
- * Node fields are the viewer's: {id, tier, kind, running, flags, wf:{state}}. Plain ES5; window.Actors / module.exports. */
+ * A hero that appears while you watch first walks the corridors to its room: from the room of whoever sent it, or,
+ * when it continues a handoff, from the room that handed off, carrying the key (trip() finds the way).
+ * Node fields are the viewer's: {id, parent, cont, tier, kind, running, flags, wf:{state}}. Plain ES5; window.Actors / module.exports. */
 (function (root) {
   'use strict';
   var D = root.Dungeon || (typeof require !== 'undefined' && require('./dungeon.js'));
@@ -12,8 +14,9 @@
   var FOES = [108, 109, 110, 111, 120, 122, 123, 124]; // td slime, cyclops, crab, hooded cultist, bat, spider, rat, grey rat
   var OPEN_CHEST = 91;  // td open chest: a finished workflow
   var OB_BONES = 721;   // ob bone pile under a fallen enemy
-  var RUG = { 629: 1, 630: 1, 631: 1 }; // ob carpet pieces: the only props that may be walked on
   var STEP_MS = 220;    // one cell of running
+  var TRIP_MS = 110;    // one cell of the walk to a new hero's room: brisk, corridors are long
+  var OB_KEY = 560;     // ob gold key carried by a hero that continues a handoff
   var OB_TROPHY = 808;  // ob trophy raised on victory (tinted gold when drawn)
 
   function cls(n) { return n.id === 'main' ? 'main' : n.kind === 'wf' ? 'workflow' : HERO[n.tier] ? n.tier : 'other'; }
@@ -24,8 +27,8 @@
   }
 
   function place(seed, d, nodes) {
-    var solid = {}, path = {}, rooms = {}, out = [];
-    d.deco.forEach(function (e) { if (!(e.sheet === 'ob' && RUG[e.idx])) solid[e.x + ',' + e.y] = 1; });
+    var solid = {}, path = {}, rooms = {}, out = [], home = {};
+    d.deco.forEach(function (e) { solid[e.x + ',' + e.y] = 1; });
     d.paths.forEach(function (p) { p.cells.forEach(function (c) { path[c[0] + ',' + c[1]] = 1; }); });
     d.rooms.forEach(function (q) { rooms[q.id] = q; });
     function free(q, x, y) { return x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h && !solid[x + ',' + y] && !path[x + ',' + y]; }
@@ -43,16 +46,18 @@
     nodes.forEach(function (n) {
       var q = rooms[n.id], a;
       if (!q) return;
-      if (q.hall) { a = near(q, q.x + 2, q.y); out.push({ id: n.id, kind: 'gm', idx: sprite(n), x: a[0], y: a[1], state: n.running ? 'cast' : 'idle', free: room(q) }); return; }
+      if (q.hall) { a = near(q, q.x + 2, q.y); home[n.id] = a; out.push({ id: n.id, kind: 'gm', idx: sprite(n), x: a[0], y: a[1], state: n.running ? 'cast' : 'idle', free: room(q) }); return; }
       if (n.kind === 'wf') {
-        a = near(q, q.cx, q.cy);
+        a = near(q, q.cx, q.cy); home[n.id] = a;
         out.push({ id: n.id, kind: 'wf', idx: n.running ? sprite(n) : n.wf && n.wf.state === 'failed' ? sprite(n) : OPEN_CHEST, x: a[0], y: a[1],
           state: n.running ? 'fight' : 'win', failed: !n.running && !!n.wf && n.wf.state === 'failed' });
         return;
       }
-      a = near(q, q.cx - 1, q.cy, true);
+      a = near(q, q.cx - 1, q.cy, true); home[n.id] = a;
+      var src = home[n.cont] || home[n.parent] || home.main; // where its walk in starts
       out.push({ id: n.id, kind: 'hero', idx: sprite(n), x: a[0], y: a[1], state: n.running ? 'fight' : 'win',
-        foe: FOES[D.prng(seed + '/foe/' + n.id)() * FOES.length | 0], fx: a[0] + 1, fy: a[1], free: room(q, (a[0] + 1) + ',' + a[1]) });
+        foe: FOES[D.prng(seed + '/foe/' + n.id)() * FOES.length | 0], fx: a[0] + 1, fy: a[1], free: room(q, (a[0] + 1) + ',' + a[1]),
+        failed: sprite(n) === HERO.ghost[2] * 12 + HERO.ghost[1], from: src || a, key: !!home[n.cont] }); // berserk: Dungeon.glow() lights its room green
     });
     return out;
   }
@@ -60,12 +65,14 @@
   // mem: {id: {state, since}} kept by the caller. An actor first seen gets since = -Infinity, so a page opened on a
   // finished session shows the resting pose instead of replaying every victory.
   function stamp(actors, mem, now) {
+    var watching = Object.keys(mem).length > 0; // not the first look: an actor that is new now has just been spawned
     actors.forEach(function (a) {
       var m = mem[a.id];
       // A hero's new state starts a fresh walk from its home cell; the guild master keeps walking through idle <-> cast.
       if (!m || m.state !== a.state) mem[a.id] = { state: a.state, since: m ? now : -Infinity,
-        walk: m && a.kind === 'gm' ? m.walk : { r: D.prng('walk/' + a.id + '/' + now) } };
-      a.since = mem[a.id].since; a.walk = mem[a.id].walk;
+        walk: m && a.kind === 'gm' ? m.walk : { r: D.prng('walk/' + a.id + '/' + now) },
+        trip: !m && watching && a.kind === 'hero' ? { t0: now } : null };
+      a.since = mem[a.id].since; a.walk = mem[a.id].walk; a.trip = mem[a.id].trip;
     });
   }
 
@@ -81,6 +88,17 @@
       }
     }
     return [];
+  }
+
+  // The cells a new hero walks from a.from to its home: over any floor, corridor or door, round solid props.
+  function trip(d, a) {
+    var free = {}, solid = {};
+    d.deco.forEach(function (e) { if (e.solid) solid[e.x + ',' + e.y] = 1; });
+    d.tiles.forEach(function (row, y) { row.forEach(function (t, x) {
+      var k = (x + d.ox) + ',' + (y + d.oy);
+      if (D.T.WALK.indexOf(t) >= 0 && !solid[k]) free[k] = 1;
+    }); });
+    return route(free, a.from, [a.x, a.y]);
   }
 
   // Position of a resting actor at `now`, in fractional cells: run to a random free cell, pause 1-3 s, repeat.
@@ -141,7 +159,17 @@
       if (a.kind === 'gm') return rest(a, a.idx); // always roams the hall; casts at each stop while work is going on
       if (a.kind === 'wf') return spr(a.idx, X + (a.state === 'fight' ? (step(300, 2, off) ? p : -p) : 0), Y, { alpha: a.failed ? 0.5 : 1 });
 
-      var FX = (a.fx - d.ox) * S, el = now - a.since;
+      var FX = (a.fx - d.ox) * S, el = now - a.since, tr = a.trip;
+      if (tr && a.state === 'fight' && !still) { // just spawned: still walking in while its enemy waits
+        if (!tr.cells) tr.cells = trip(d, a);
+        var f = (now - tr.t0) / TRIP_MS, n = Math.floor(f), c1 = tr.cells[n], c0 = n ? tr.cells[n - 1] : a.from;
+        if (c1) {
+          var TX = Math.round((c0[0] + (c1[0] - c0[0]) * (f - n) - d.ox) * 16) * p, TY = Math.round((c0[1] + (c1[1] - c0[1]) * (f - n) - d.oy) * 16) * p;
+          spr(a.idx, TX, TY - step(220, 2, off) * p, { flip: c1[0] < c0[0] });
+          if (a.key) ob(OB_KEY, TX, TY - S + 2 * p, 1);
+          return spr(a.foe, FX, Y - step(1600, 2, off) * p, { flip: true });
+        }
+      }
       if (a.state === 'fight') { // 6 beats: wind-up, lunge, hit (enemy flashes, slash, sparks), recoil, counter-attack, reset
         k = step(900, 6, off);
         var hx = [0, 2, 4, 1, 0, 0][k] * p, ex = [0, 0, 2, 1, -3, 0][k] * p;
@@ -181,11 +209,13 @@
       spr(idx, X, Y - (k === 0 && a.kind === 'hero' ? 3 : step(1600, 2, off)) * p, { flip: o.face < 0 });
       if (k === 0 && a.kind === 'hero') { dot('#ffd23f', X + 2 * p, Y - 2 * p); dot('#fff3b0', X + 13 * p, Y - p); }
     }
-    function cast(idx, X, Y, face, off) { // magic circle on the floor, sparks round the hand, a rune rising off the staff
-      var k = step(800, 8, off), j;
-      for (j = 0; j < 4; j++) {
-        var c = (j / 4 + k / 8) * 6.2832;
-        dot(j % 2 ? '#b48cff' : '#5ab4ff', X + S / 2 + Math.cos(c) * 9 * p, Y + S - p + Math.sin(c) * 3 * p, 2);
+    function cast(idx, X, Y, face, off) { // a turning pentagram on the floor, sparks round the hand, a rune rising off the staff
+      var k = step(800, 8, off), j, i, cx = X + S / 2 - p, cy = Y + S - 2 * p;
+      function pt(a) { return [cx + Math.cos(a) * 22 * p, cy + Math.sin(a) * 11 * p]; } // a circle lying on the floor, seen from above
+      for (j = 0; j < 36; j++) { var c = pt(j / 36 * 6.2832); dot(k % 2 ? '#b48cff' : '#8f6bd6', c[0], c[1], 2); }
+      for (j = 0; j < 5; j++) { // star: each point joins the one two along; one loop turns it a fifth, so the loop is seamless
+        var a = pt((j + k / 8) * 1.2566 - 1.5708), b = pt((j + 2 + k / 8) * 1.2566 - 1.5708);
+        for (i = 0; i <= 20; i++) dot(i % 20 ? '#ff5ad0' : '#fff3b0', a[0] + (b[0] - a[0]) * i / 20, a[1] + (b[1] - a[1]) * i / 20, i % 20 ? 1 : 2);
       }
       for (j = 0; j < 3; j++) {
         var b = (j / 3 + k / 8) * 6.2832;
@@ -196,7 +226,7 @@
     }
   }
 
-  var Actors = { place: place, stamp: stamp, draw: draw, walk: walk, sprite: sprite, HERO: HERO, FOES: FOES, OPEN_CHEST: OPEN_CHEST };
+  var Actors = { place: place, stamp: stamp, draw: draw, walk: walk, trip: trip, sprite: sprite, HERO: HERO, FOES: FOES, OPEN_CHEST: OPEN_CHEST };
   if (typeof module !== 'undefined' && module.exports) module.exports = Actors;
   root.Actors = Actors;
 })(typeof window !== 'undefined' ? window : this);

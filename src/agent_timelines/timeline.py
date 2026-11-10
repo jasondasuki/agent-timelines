@@ -50,7 +50,7 @@ PRICE_COLS = ("in", "cc5", "cc1", "cr", "out", "over")
 FAST_MULT = 2  # usage.speed == "fast": every price column doubles
 STALE = 600  # s: an unfinished agent whose transcript is idle this long is dead, not running
 LIVE_AGE = 3600  # s: a session with no activity this long is ended
-ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js", "lobby.js", "gantt.js")  # sprites + font (assets/LICENSES.txt) + view scripts
+ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js", "lobby.js", "gantt.js", "sky.js")  # sprites + font (assets/LICENSES.txt) + view scripts
 CONFIG = os.path.expanduser(os.environ.get("AGENT_TIMELINES_CONFIG") or "~/.config/agent-timelines/config.json")
 KEYS = {"out_dir": "OUT_DIR", "agents_dir": "AGENTS_DIR", "handover_dir": "HANDOVER_DIR", "tiers": "TIERS", "guard_text": "DENY",
         "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS", "lobby_limit": "LOBBY_LIMIT",
