@@ -149,10 +149,11 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 .hint{color:var(--mut);font-size:8px;margin-top:14px}
 @media (max-width:760px){.lrow,.lhead{grid-template-columns:14px minmax(0,1fr) 56px 64px 70px}.lrow.rec{grid-template-columns:14px minmax(0,1fr) 44px 72px 40px}.lrow>:nth-child(n+6),.lhead>:nth-child(n+6){display:none}.logo{font-size:24px}.logo span{font-size:16px}}
 /* trophy room (lobby) and the badges of one session (hud); a toast when an unlock is new to this browser */
-#trophy{margin-top:14px}#trophy summary{color:var(--gold);cursor:pointer;font-size:10px}#trophy summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}#trophy .stats{margin:8px 0}
-#tlist{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px}
-#tlist li{display:flex;gap:8px;align-items:flex-start;padding:6px;border:2px dashed var(--hi);color:var(--mut);overflow-wrap:anywhere}#tlist .spr{opacity:.35;filter:grayscale(1)}
-#tlist li.got{border:2px solid var(--gold);color:var(--fg)}#tlist li.got .spr{opacity:1;filter:none}#tlist li.got b{color:var(--gold)}#tlist b{display:block;font-weight:400}#tlist .mut{display:block;margin-top:2px}
+#trophy{margin-top:14px}#trophy summary{color:var(--gold);cursor:pointer;font-size:10px}#trophy summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}#trophy .stats{margin:8px 0}#trophy .lvl{margin-top:8px}#trophy .lvl b{color:var(--gold);font-weight:400}#trophy .lvl .xp span{background:var(--gold)}
+:is(#tlist,#qlist){list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px}
+:is(#tlist,#qlist) li{display:flex;gap:8px;align-items:flex-start;padding:6px;border:2px dashed var(--hi);color:var(--mut);overflow-wrap:anywhere}:is(#tlist,#qlist) .spr{opacity:.35;filter:grayscale(1)}
+:is(#tlist,#qlist) li.got{border:2px solid var(--gold);color:var(--fg)}:is(#tlist,#qlist) li.got .spr{opacity:1;filter:none}:is(#tlist,#qlist) li.got b{color:var(--gold)}:is(#tlist,#qlist) b{display:block;font-weight:400}:is(#tlist,#qlist) .mut{display:block;margin-top:2px}
+#quests{margin-top:14px;font-size:8px}#quests h2{margin:0}
 #toast{position:fixed;z-index:25;left:0;right:0;bottom:16px;margin:0 auto;width:max-content;max-width:calc(100vw - 24px);padding:10px 12px;display:flex;gap:10px;align-items:center;color:var(--gold);font-size:8px;animation:slide .3s steps(4)}
 @keyframes across{to{transform:translateX(calc(100vw + 128px))}}
 @keyframes blink{50%{opacity:0}}
@@ -171,6 +172,7 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 <div id="lv"></div><h2>HALL OF RECORDS</h2><div id="hr"></div>
 <div class="pager" id="lpager" hidden><button class="btn" id="lprev" type="button">&lt; PREV</button><span id="lpage" class="mut" aria-live="polite"></span><button class="btn" id="lnext" type="button">NEXT &gt;</button></div></div>
 <div class="px" id="lparty" aria-live="polite"></div>
+<section id="quests" class="px lbox" aria-labelledby="qsum" hidden><h2 id="qsum">DAILY QUESTS</h2><ul id="qlist" aria-label="Today's quests"></ul></section>
 <details open id="trophy" class="px lbox" aria-label="Trophy room: achievements" hidden><summary id="tsum">TROPHY ROOM</summary><div id="ttot"></div><ul id="tlist" aria-label="Achievements"></ul></details><p class="hint">UP/DOWN SELECT · ENTER JOIN · / SEARCH · LEFT/RIGHT PAGE · REFRESHES EVERY 3S</p></section>
 <header id="hud" class="px"><h1><span id="h1">Loading…</span><span class="views" role="group" aria-label="View"><a class="btn" id="vlobby" href="index.html">&lt; LOBBY</a><button class="btn" id="vchart" type="button" aria-pressed="true">CHART</button><button class="btn" id="vmap" type="button" aria-pressed="false">MAP</button><button class="btn" id="vtime" type="button" aria-pressed="false">TIMELINE</button></span></h1>
 <div class="stats" id="stats"></div><div id="meta" class="meta mut"></div><div id="badges" class="fl" role="group" aria-label="Achievements earned in this session" hidden></div><div id="xp" class="xp" title="Gold by model family"></div><div id="err" class="err" hidden></div>
@@ -431,18 +433,27 @@ render(d)};
 window.TLP=function(p){if(p&&cur&&p.id===cur.id&&p.prompts){PR=p.prompts;RP=p.replies||{};if(sel)fill()}};
 /* ---- achievements: achievements.js (the save file, shared by every session) -> trophy room, this session's badges, a toast for what is new */
 var ACH=null,SEEN=Trophy.parseSeen(lsGet("tlSeen")),toastT=0;
-window.TLA=function(a){if(!a||typeof a!=="object")return;ACH=a;if(INDEX)drawTrophy();else drawBadges();toastNew()};
+window.TLA=function(a){if(!a||typeof a!=="object")return;ACH=a;if(INDEX){drawTrophy();drawQuests()}else drawBadges();toastNew()};
+function drawQuests(){var qs=Trophy.quests(ACH,new Date()),ul=$("qlist"),n=qs.filter(function(q){return q.done}).length;$("quests").hidden=!qs.length;  /* an older save file has no quests: no box */
+$("qsum").textContent="DAILY QUESTS "+n+"/"+qs.length+" · 50 XP EACH · NEW AT MIDNIGHT";
+ul.replaceChildren.apply(ul,qs.map(function(q){var li=el("li",q.done?"got":""),b=el("span");li.append(spr(ICON.key,2));b.append(el("b",null,q.name),el("span","mut",(q.done?"DONE · ":"OPEN · ")+q.desc));li.append(b);
+li.setAttribute("aria-label",q.name+", "+(q.done?"done":"open")+": "+q.desc);return li}))}
 function drawTrophy(){var c=Trophy.count(ACH),t=Trophy.totals(ACH),st=el("div","stats"),ul=$("tlist");$("trophy").hidden=!c.all;  /* no save file yet (or an empty one): no box */
 $("tsum").textContent="TROPHY ROOM "+c.got+"/"+c.all;$("tsum").setAttribute("aria-label","Trophy room, "+c.got+" of "+c.all+" achievements unlocked");
 st.append(stat(HERO.executor,t.heroes.toLocaleString(),"heroes, all time","Subagents spawned in every session so far, including the ones past the 30-day purge"),stat(ICON.key,t.sessions.toLocaleString(),"sessions","Sessions seen so far"),
 stat(ICON.coin,usd(t.usd),"total","API list price of every session so far"),stat(ICON.hourglass,t.streak+"D","best streak","Most days in a row with a session"));
-$("ttot").replaceChildren(st);
+var lv=Trophy.level(ACH),lb=el("div","lvl"),bar=el("div","xp"),fill=el("span");$("ttot").replaceChildren(st);
+if(lv){fill.style.width=lv.pct+"%";bar.append(fill);bar.setAttribute("role","img");bar.setAttribute("aria-label",lv.xp+" of "+lv.hi+" XP to level "+(lv.n+1));
+lb.append(el("b",null,"GUILD LV "+lv.n+" · "+lv.title.toUpperCase()),bar,el("span","mut",lv.xp.toLocaleString()+" / "+lv.hi.toLocaleString()+" XP · 10 per hero, 20 per session, 100 per trophy, 50 per quest"));$("ttot").prepend(lb)}
 ul.replaceChildren.apply(ul,Trophy.rows(ACH).map(function(r){var li=el("li",r.got?"got":""),b=el("span"),d=r.got&&r.t?new Date(r.t*1000).toLocaleDateString():"";
 li.append(spr(ICON.trophy,2));b.append(el("b",null,r.name),el("span","mut",r.got?(d?"UNLOCKED "+d+" · ":"")+r.desc:"LOCKED · "+r.desc));li.append(b);
 li.setAttribute("aria-label",r.name+", "+(r.got?"unlocked"+(d?" "+d:""):"locked")+": "+r.desc);return li}))}
 function drawBadges(){var b=$("badges"),rs=cur?Trophy.pick(ACH,cur.badges):[];b.replaceChildren();rs.forEach(function(r){chip(b,"key",ICON.trophy,r.name.toUpperCase(),r.desc)});b.hidden=!rs.length}
-function toastNew(){var rs=Trophy.fresh(ACH,SEEN);if(!rs.length)return;SEEN=SEEN.concat(rs.map(function(r){return r.id}));lsSet(JSON.stringify(SEEN),"tlSeen");
-$("tt").textContent=Trophy.toast(rs);$("toast").hidden=false;clearTimeout(toastT);toastT=setTimeout(hideToast,6000)}
+function toastNew(){var rs=Trophy.fresh(ACH,SEEN),up=Trophy.levelUp(ACH,lsGet("tlLvl")),qs=Trophy.quests(ACH,new Date()),qt=Trophy.questToast(qs,Trophy.parseSeen(lsGet("tlQ")));if(!rs.length&&!up&&!qt)return;
+if(qt)lsSet(JSON.stringify(qs.filter(function(q){return q.done}).map(function(q){return q.key})),"tlQ");  /* today's only: older days drop out by themselves */
+SEEN=SEEN.concat(rs.map(function(r){return r.id}));lsSet(JSON.stringify(SEEN),"tlSeen");
+if(up)lsSet(String(Trophy.level(ACH).n),"tlLvl");
+$("tt").textContent=[Trophy.toast(rs),qt,up].filter(Boolean).join(" · ");$("toast").hidden=false;clearTimeout(toastT);toastT=setTimeout(hideToast,6000)}
 function hideToast(){$("toast").hidden=true}
 $("tx").addEventListener("click",hideToast);document.addEventListener("keydown",function(e){if(e.key==="Escape")hideToast()});
 function loadPrompts(){if(prBusy||INDEX)return;prBusy=true;var sc=document.createElement("script");sc.src=SID+".prompts.js?t="+Date.now();

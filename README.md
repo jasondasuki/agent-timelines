@@ -13,8 +13,12 @@ session works. Everything is read from your local transcripts; nothing leaves yo
   paging (`/` focuses the search box, left/right change the page). A ledger on top sums what the listed sessions cost:
   today, the last 7 days by day, and the costliest projects (click one to filter).
 - **Trophy room**: a box in the lobby with every achievement (`7/19`): unlocked ones in gold with their date, locked ones dim with their condition,
-  plus your lifetime heroes, sessions, spend and best streak. A session's own badges show under its title, and a toast announces an unlock this browser has not seen.
+  plus your lifetime heroes, sessions, spend and best streak. On top is your guild level with an XP bar: 10 XP per hero, 20 per session and
+  100 per achievement, 50 per daily quest (spend earns nothing); level n starts at 50·n·(n-1) XP. A session's own badges show under its title, and a toast announces an unlock this browser has not seen.
   See [Achievements](#achievements).
+- **Daily quests**: a board above the trophy room with three quests a day (the same three everywhere, new at local midnight), drawn from eight such as
+  "3 or more heroes and no issue flags" or "a hero finished in under 30 s". A settled session finishes the quests of the day it was last active on that it meets;
+  each pays 50 XP towards the guild level, once, however often the session is rebuilt. `agent-timelines achievements` lists today's three.
 - **Chart view**: the delegation tree as a party of heroes, with flags for rule breaks (no model set,
   model mismatch, ignored tool limit, unanswered handoff, …).
   Each card shows the agent's top tools and the start of its final reply; the detail panel lists every tool and the full report
@@ -69,7 +73,7 @@ Start or continue a Claude Code session; it appears in the lobby on its first ho
 | `serve [--port N] [--no-browser]` | Serve the dashboard on 127.0.0.1. |
 | `open [SESSION-PREFIX]` | Build one session (newest by default) and open it from disk, no server. |
 | `rebuild [--days N]` | Regenerate data for recent sessions from their transcripts (also fills the achievements save file). |
-| `achievements` | List every achievement with its unlock state and your lifetime totals. |
+| `achievements` | List every achievement with its unlock state, your guild level, today's quests and your lifetime totals. |
 | `list` | Recent sessions with their subagent counts. |
 | `version` (or `--version`) | Print the version. |
 
@@ -83,7 +87,7 @@ The pages hold prompt text from your sessions, which is why `serve` binds to loc
 ## Achievements
 
 `achievements.js` (next to the data files, loaded by the pages like them) is the save file: your unlocked achievements (`{id: {t, sid}}`, the earliest unlock wins),
-a record per session younger than `retain_days` (heroes, spend), the totals of the older ones, and the days you were active (for the streak). Lifetime totals survive the
+a record per session younger than `retain_days` (heroes, spend), the totals of the older ones, the days you were active (for the streak) and the quests finished per day. Lifetime totals survive the
 30-day purge and do not grow when a session is rebuilt, because a session's record is overwritten, not added. A session already older than `retain_days` is never entered,
 so `rebuild` cannot count old transcripts twice; a session resumed after it was folded in counts its old part again (the known limit). Session achievements are judged
 only once the session is settled (main session idle, no agent running). Writes take a lock and are atomic; a corrupt or missing file starts fresh. The rules are one

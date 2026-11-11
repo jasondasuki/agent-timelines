@@ -408,6 +408,25 @@ def test_achievement_rules():
     assert not any(a[3](None, zero) for a in life)
     for a, key, v in zip(life, ("heroes", "heroes", "sessions", "usd", "streak"), (100, 1000, 100, 1000, 7)):
         assert a[3](None, dict(zero, **{key: v})) and not a[3](None, dict(zero, **{key: v - 1})), a[0]
+    # guild level: XP from heroes, sessions and trophies, never from spend; level n starts at 50*n*(n-1)
+    assert tl.level(zero, 0) == {"n": 1, "title": "Tavern Regulars", "xp": 0, "lo": 0, "hi": 100}
+    assert tl.level(dict(zero, usd=9999), 0)["xp"] == 0
+    assert tl.level(dict(zero, heroes=9), 0)["n"] == 1 and tl.level(dict(zero, heroes=10), 0)["n"] == 2
+    assert tl.level(dict(zero, heroes=10, sessions=5), 1) == {"n": 3, "title": "Chartered Company", "xp": 300, "lo": 300, "hi": 600}
+    assert tl.level(dict(zero, heroes=49499), 0)["title"] == "Mythic Pantheon" and tl.level(dict(zero, heroes=49500), 0)["n"] == 100
+    assert tl.level(dict(zero, heroes=100000), 0)["title"] == "Guild of Legends", "the last title holds past level 100"
+    assert [lv for lv, _ in tl.TITLES] == sorted(lv for lv, _ in tl.TITLES) and tl.TITLES[0][0] == 1
+    assert tl.level(zero, 0, 3)["xp"] == 3 * tl.QUEST_XP
+    # daily quests: three a day, a window that moves by three (trophy.js picks the same: see test_trophy.js for these two days)
+    qids = lambda day: [q[0] for q in tl.quests_for(day)]
+    all_ids = [q[0] for q in tl.QUESTS]
+    assert len(all_ids) == len(set(all_ids)) == 8 and len(all_ids) % 3, "test_trophy.js assumes 8; a multiple of 3 would freeze the trios"
+    assert qids("2026-03-01") == all_ids[4:7] and qids("2026-03-02") == [all_ids[7], all_ids[0], all_ids[1]] and qids("1970-01-01") == all_ids[1:4]
+    won = lambda d: {q[0] for q in tl.QUESTS if q[3](tl.facts(d))}
+    assert won(sdata([hero(i) for i in range(3)])) >= {"muster", "clean"} and "muster" not in won(sdata([hero(0), hero(1)]))
+    assert "clean" not in won(sdata([hero(0), hero(1), hero(2, flags=["tool-limit", "ignored-limit"])]))
+    assert "scout" in won(sdata([hero()])) and "scout" not in won(sdata([hero(0), hero(1)])) and "scout" not in won(sdata([hero(flags=["tool-limit", "ignored-limit"])]))
+    assert "pack" in won(sdata(at_once(3))) and "pack" not in won(sdata(at_once(2)))
 
 
 def test_save_file():
@@ -418,7 +437,7 @@ def test_save_file():
     pub = lambda x: tl.publish(x, od, now=now)
     save = lambda: tl.read_save(os.path.join(od, tl.SAVE))
     # missing file: fresh. publish writes it as TLA({...}); and puts the session's own ids in its data
-    assert tl.read_save(os.path.join(od, tl.SAVE)) == {"v": 1, "unlocked": {}, "sessions": {}, "folded": {"sessions": 0, "heroes": 0, "usd": 0.0}, "days": []}
+    assert tl.read_save(os.path.join(od, tl.SAVE)) == {"v": 1, "unlocked": {}, "sessions": {}, "folded": {"sessions": 0, "heroes": 0, "usd": 0.0}, "days": [], "quests": {}}
     five = [hero(i) for i in range(5)]
     pub(sd("s1", agents=five))
     raw = open(os.path.join(od, tl.SAVE)).read()
@@ -427,6 +446,23 @@ def test_save_file():
     jd = unwrap(os.path.join(od, "s1.data.js"))
     assert jd["badges"] == tl.badges_of(sd("s1", agents=five)) and "party5" in jd["badges"] and set(jd["badges"]) <= set(sv["unlocked"])
     assert sv["unlocked"]["party5"] == {"t": now, "sid": "s1"} and [x[0] for x in sv["list"]] == [a[0] for a in tl.ACHIEVEMENTS] and all(len(x) == 3 for x in sv["list"])
+    qn = sum(len(v) for v in sv["quests"].values())
+    assert sv["level"] == tl.level(sv["totals"], len(sv["unlocked"]), qn) and sv["level"]["xp"] == 50 + 20 + 100 * len(sv["unlocked"]) + tl.QUEST_XP * qn, "the file carries the level the viewer draws"
+    # quests (in their own folder): a settled session finishes the quests of its last day that it meets; again and again pays once; an unsettled one finishes none
+    qd, today = os.path.join(d, "q"), datetime.fromtimestamp(now).strftime("%Y-%m-%d")
+    os.makedirs(qd)
+    qsave = lambda: tl.read_save(os.path.join(qd, tl.SAVE))
+    pack = lambda **k: [hero(i, start=0, end=100, **k) for i in range(3)]
+    assert "pack" in [q[0] for q in tl.quests_for(today)] and sv["quests"] == {} and [x[0] for x in sv["qlist"]] == [q[0] for q in tl.QUESTS] and all(len(x) == 3 for x in sv["qlist"])
+    tl.save_achievements(qd, sd("run", agents=pack(running=True)), now)
+    assert qsave()["quests"] == {}
+    for _ in range(2):
+        tl.save_achievements(qd, sd("p1", agents=pack()), now)
+    assert qsave()["quests"] == {today: ["pack"]} and unwrap(os.path.join(qd, tl.SAVE))["level"]["xp"] == 2 * (30 + 20) + 100 * len(qsave()["unlocked"]) + tl.QUEST_XP
+    tl.save_achievements(qd, sd("p2", 1, agents=pack()), now)
+    assert qsave()["quests"] == {today: ["pack"], "2026-02-28": ["clean"]}, "yesterday's session counts for yesterday's three, where pack is not one"
+    open(os.path.join(qd, tl.SAVE), "w").write('TLA({"quests": {"2026-03-01": ["b", "a", "a", 5], "nope": ["a"], "2026-03-02": "x"}});')
+    assert qsave()["quests"] == {"2026-03-01": ["a", "b"]}
     # idempotent: the same session published again and again counts once; it grows, the totals follow (not add up)
     for _ in range(3):
         pub(sd("s1", agents=five))
