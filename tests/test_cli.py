@@ -110,7 +110,7 @@ def test_rebuild_and_achievements():
     finally:
         tl.PROJECTS, tl.OUT_DIR = keep
     lines = out.getvalue().splitlines()
-    assert len(lines) == len(tl.ACHIEVEMENTS) + 1 and lines[0].startswith("[x] First Blood") and lines[1].startswith("[ ] Full Party"), out.getvalue()
+    assert len(lines) == len(tl.ACHIEVEMENTS) + 3 and lines[-3].startswith("Guild level %d, " % tl.level_of(sv)["n"]) and lines[-2].startswith("Quests today ") and lines[-2].count("[") == 3 and lines[0].startswith("[x] First Blood") and lines[1].startswith("[ ] Full Party"), out.getvalue()
     assert lines[-1].startswith("1/%d unlocked" % len(tl.ACHIEVEMENTS)) and "1 heroes" in lines[-1], lines[-1]
 
 

@@ -611,9 +611,13 @@ def facts(d):
             "swarm": swarm, "berserk": any("ignored-limit" in (a.get("flags") or []) for a in hs)}
 
 
+def settled(d):
+    return not (d.get("prun") or any(a.get("running") for a in d.get("agents") or []))
+
+
 def badges_of(d):
     """Ids of the session achievements this session earns by itself: judged only once it is settled (main idle, no agent running)."""
-    if d.get("prun") or any(a.get("running") for a in d.get("agents") or []):
+    if not settled(d):
         return []
     s = facts(d)
     return [i for i, _, _, pred, life in ACHIEVEMENTS if not life and pred(s, None)]
@@ -621,7 +625,7 @@ def badges_of(d):
 
 def read_save(path):
     """The save file as a dict with every field present; a missing or corrupt file (or field) starts fresh instead of raising."""
-    save = {"v": 1, "unlocked": {}, "sessions": {}, "folded": {"sessions": 0, "heroes": 0, "usd": 0.0}, "days": []}
+    save = {"v": 1, "unlocked": {}, "sessions": {}, "folded": {"sessions": 0, "heroes": 0, "usd": 0.0}, "days": [], "quests": {}}
     try:
         with open(path, encoding="utf-8") as f:
             raw = json.loads(f.read().strip()[4:-2])
@@ -638,6 +642,8 @@ def read_save(path):
         save["folded"].update({k: raw["folded"][k] for k in save["folded"] if num(raw["folded"].get(k))})
     if isinstance(raw.get("days"), list):
         save["days"] = sorted({x for x in raw["days"] if isinstance(x, str) and re.match(r"^\d{4}-\d\d-\d\d$", x)})
+    if isinstance(raw.get("quests"), dict):
+        save["quests"] = {k: sorted({x for x in v if isinstance(x, str)}) for k, v in raw["quests"].items() if re.match(r"^\d{4}-\d\d-\d\d$", k) and isinstance(v, list)}
     return save
 
 
@@ -653,11 +659,53 @@ def totals(save):
             "usd": round(f["usd"] + sum(r["usd"] for r in recs), 6), "streak": streak}
 
 
+TITLES = [(1, "Tavern Regulars"), (3, "Chartered Company"), (5, "Guild Hall"), (10, "Renowned Guild"), (15, "Royal Order"), (20, "Legendary Order"),
+          (25, "Dragonbane Company"), (30, "Iron Citadel"), (40, "Crown Protectorate"), (50, "High Conclave"), (60, "Stormforged Legion"),
+          (70, "Astral Dominion"), (80, "Eternal Vanguard"), (90, "Mythic Pantheon"), (100, "Guild of Legends")]
+
+
+# Daily quests: (id, name, description, predicate(s)), s = facts of one settled session. Three a day (quests_for), QUEST_XP each.
+# Keep the length off a multiple of 3, or every day shows one of the same few fixed trios.
+QUEST_XP = 50
+QUESTS = [
+    ("muster", "Muster", "3 or more heroes in one session", lambda s: s["n"] >= 3),
+    ("clean", "Clean Sweep", "3 or more heroes and no issue flags", lambda s: s["n"] >= 3 and s["issues"] == 0),
+    ("thrifty", "Thrifty", "3 or more heroes for under $1 (every model priced)", lambda s: s["n"] >= 3 and s["priced"] and s["usd"] < 1),
+    ("quick", "Quick Strike", "A hero finished in under 30 s", lambda s: s["quick"]),
+    ("mixed", "Mixed Party", "3 or more classes in one session", lambda s: s["classes"] >= 3),
+    ("slay", "Slay the Boss", "The boss finished with no issue flags and no handoff", lambda s: s["slain"]),
+    ("pack", "Pack Hunt", "3 or more heroes running at once", lambda s: s["swarm"] >= 3),
+    ("scout", "Lone Scout", "A session with one hero, finished, and no issue flags", lambda s: s["n"] == 1 and s["done"] and s["issues"] == 0),
+]
+
+
+def quests_for(day):
+    """The three quests of a local day ("YYYY-MM-DD"): a window on QUESTS that moves by three each day. trophy.js works out the same three from the day."""
+    o = date.fromisoformat(day).toordinal() * 3
+    return [QUESTS[(o + k) % len(QUESTS)] for k in range(3)]
+
+
+def level(t, unlocked, quests=0):
+    """Guild level from the lifetime totals, the number of unlocked achievements and of finished daily quests: 10 XP per hero, 20 per session,
+    100 per achievement, QUEST_XP per quest. Spend earns nothing, so a costly session levels no faster. Level n starts at 50*n*(n-1) XP (100, 300, 600, ...);
+    lo and hi are the bounds of the current level."""
+    xp, n = 10 * t["heroes"] + 20 * t["sessions"] + 100 * unlocked + QUEST_XP * quests, 1
+    while 50 * n * (n + 1) <= xp:
+        n += 1
+    return {"n": n, "title": [name for lv, name in TITLES if lv <= n][-1], "xp": xp, "lo": 50 * n * (n - 1), "hi": 50 * n * (n + 1)}
+
+
+def level_of(save):
+    return level(totals(save), sum(r[0] in save["unlocked"] for r in ACHIEVEMENTS), sum(len(v) for v in save["quests"].values()))
+
+
 def save_achievements(out_dir, d, now):
     """Fold one session into the save file (read-modify-write under a lock: builds of different sessions run at the same time) and
     return the session's own badge ids. The session's record is overwritten on every rebuild, so a rebuild never counts it twice.
     shortcut: a session record is dropped into the lifetime totals once it is RETAIN_DAYS old, and one resumed after that is counted
-    again (its old part once more); a session that spans days marks only its first and last day as active. Upgrade to per-day records if it matters."""
+    again (its old part once more); a session that spans days marks only its first and last day as active. Upgrade to per-day records if it matters.
+    A settled session finishes the quests of the day it was last active on (a set per day, so a rebuild pays once).
+    shortcut: "quests" keeps one small entry per day with a finished quest and is never folded, fold it into a count if the file grows too big."""
     badges, path = badges_of(d), os.path.join(out_dir, SAVE)
     with open(os.path.join(out_dir, ".achievements.lock"), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -668,6 +716,11 @@ def save_achievements(out_dir, d, now):
             r = save["sessions"].pop(sid)
             save["folded"] = {"sessions": save["folded"]["sessions"] + 1, "heroes": save["folded"]["heroes"] + r["heroes"], "usd": save["folded"]["usd"] + r["usd"]}
         save["days"] = sorted(set(save["days"]) | {datetime.fromtimestamp(t).strftime("%Y-%m-%d") for t in (d.get("t0"), d["updated"]) if t})
+        if settled(d):
+            s, qday = facts(d), datetime.fromtimestamp(upd).strftime("%Y-%m-%d")
+            won = {q[0] for q in quests_for(qday) if q[3](s)}
+            if won:
+                save["quests"][qday] = sorted(won | set(save["quests"].get(qday, [])))
         t = totals(save)
         for i, _, _, pred, life in ACHIEVEMENTS:
             if i in badges or life and pred(None, t):
@@ -675,6 +728,8 @@ def save_achievements(out_dir, d, now):
                     save["unlocked"][i] = {"t": upd, "sid": d["id"]}
         save["list"] = [[i, n, ds] for i, n, ds, _, _ in ACHIEVEMENTS]  # the viewer shows names and conditions from here, so a new rule needs no viewer change
         save["totals"] = t
+        save["qlist"] = [[i, n, ds] for i, n, ds, _ in QUESTS]  # with "quests" ({day: [ids done]}) all the viewer needs for today's board
+        save["level"] = level_of(save)
         write_atomic(path, "TLA(%s);\n" % js(save))
     return badges
 

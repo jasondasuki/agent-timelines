@@ -129,7 +129,11 @@ def achievements(a):
     for i, name, desc, _, _ in tl.ACHIEVEMENTS:
         u = save["unlocked"].get(i)
         print("[%s] %-16s %-52s %s" % ("x" if u else " ", name, desc, "%s (%s)" % (datetime.fromtimestamp(u["t"]).strftime("%Y-%m-%d"), str(u.get("sid"))[:8]) if u else ""))
-    t = tl.totals(save)
+    t, lv = tl.totals(save), tl.level_of(save)
+    print("Guild level %d, %s · %d XP, level %d at %d" % (lv["n"], lv["title"], lv["xp"], lv["n"] + 1, lv["hi"]))
+    day = datetime.now().strftime("%Y-%m-%d")
+    won = save["quests"].get(day, [])
+    print("Quests today %d/3 (%d XP each): %s" % (len(won), tl.QUEST_XP, " · ".join("[%s] %s: %s" % ("x" if q[0] in won else " ", q[1], q[2]) for q in tl.quests_for(day))))
     print("%d/%d unlocked · %d heroes · %d sessions · $%.2f · best streak %d days" % (sum(r[0] in save["unlocked"] for r in tl.ACHIEVEMENTS), len(tl.ACHIEVEMENTS), t["heroes"], t["sessions"], t["usd"], t["streak"]))
 
 
