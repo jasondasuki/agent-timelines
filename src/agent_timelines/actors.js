@@ -5,7 +5,10 @@
  * doors, corridors or the fallen enemy. walk() holds that motion and is canvas-free so it can be tested.
  * A hero that appears while you watch first walks the corridors to its room: from the room of whoever sent it, or,
  * when it continues a handoff, from the room that handed off, carrying the key (trip() finds the way).
- * Node fields are the viewer's: {id, parent, cont, tier, kind, running, flags, wf:{state}}. Plain ES5; window.Actors / module.exports. */
+ * A ranked hero (node.rank, from the builder: "elite" costs at least half the boss, "boss" is the costliest of a party of 3+) fights a bigger
+ * enemy: an elite's is 2x, the boss is a 3x red dragon wearing a crown, and its room's light turns red while it fights (Dungeon.glow). Rank is
+ * drawing only: it changes no room, door or free cell the layout or the hero's home depends on, because cost grows while a session runs.
+ * Node fields are the viewer's: {id, parent, cont, tier, kind, running, flags, rank, wf:{state}}. Plain ES5; window.Actors / module.exports. */
 (function (root) {
   'use strict';
   var D = root.Dungeon || (typeof require !== 'undefined' && require('./dungeon.js'));
@@ -19,6 +22,36 @@
   var BOUT_MS = 900;    // one exchange of blows: the least a hero fights after walking in, however short its job was
   var OB_KEY = 560;     // ob gold key carried by a hero that continues a handoff
   var OB_TROPHY = 808;  // ob trophy raised on victory (tinted gold when drawn)
+  var OB_CROWN = 139;   // ob crown over the boss (tinted gold when drawn)
+  // The boss's enemy, drawn by hand because neither sheet has a dragon: 24x24, each dot two sprite pixels, so it fills its 3x3 cells.
+  // It faces left, toward the hero, so it is never flipped. Letters are DRAGON_PAL colours, '.' is empty.
+  var BOSS = 'dragon';
+  var DRAGON_PAL = { o: '#1c1016', r: '#d83a2e', R: '#9c2030', l: '#ff6a4a', y: '#f0b860', Y: '#c88838', h: '#f4ead5', e: '#ffd23f', w: '#7a1c3a', W: '#b03050', t: '#ffffff' };
+  var DRAGON = [
+    '........................',
+    '......oo.......ooooo....',
+    '.....ohho....ooWWWWWoo..',
+    '..ooooohhoo.oWWwwwwwWWo.',
+    '.orrrrrohrroWWwwWwwwwwWo',
+    'orllrrrrrrrroWwwWwwwWwwo',
+    'orreorrrrrrRoWwwWwwwWwwo',
+    'orrrrrrrrrRRoWwwWwwwWwo.',
+    'olrrrrrrrRRroowwWwwwWo..',
+    'otrtrtrorRRrrooowWwwo...',
+    '.ooooooorRrrrrrooooo....',
+    '..otrtrorrrrlrrrro......',
+    '...oooooyyrrrlrrrRo.....',
+    '......oyyyyrrrrrrrRo....',
+    '.....oyYyyyyrrrrrrRRo...',
+    '.....oyyyyyyrrrrrrRRo...',
+    '.....oyYyyyyrrrrrRRRo.oo',
+    '.....oyyyyyyrrrrrRRRooRo',
+    '......oyYyyyrrrrRRRorRRo',
+    '......oyyyyrrrrRRRRrRRo.',
+    '.....orryyrrrRRRRRRRRo..',
+    '....orrrorrrrRRRoooooo..',
+    '...ohrhroohrhrRo........',
+    '...oooooo.oooooo........'];
 
   function cls(n) { return n.id === 'main' ? 'main' : n.kind === 'wf' ? 'workflow' : HERO[n.tier] ? n.tier : 'other'; }
   function sprite(n) { // the viewer's sprite(): a berserk hero (ignored the tool limit) is a ghost, a running workflow a mimic
@@ -39,9 +72,9 @@
       }
       return [q.cx, q.cy];
     }
-    function room(q, skip) { // free cells of q, minus `skip`, as {"x,y": 1}
+    function room(q, skip) { // free cells of q, minus the cells in the map `skip`, as {"x,y": 1}
       var f = {}, x, y;
-      for (y = q.y; y < q.y + q.h; y++) for (x = q.x; x < q.x + q.w; x++) if (free(q, x, y) && x + ',' + y !== skip) f[x + ',' + y] = 1;
+      for (y = q.y; y < q.y + q.h; y++) for (x = q.x; x < q.x + q.w; x++) if (free(q, x, y) && !(skip && skip[x + ',' + y])) f[x + ',' + y] = 1;
       return f;
     }
     nodes.forEach(function (n) {
@@ -56,8 +89,14 @@
       }
       a = near(q, q.cx - 1, q.cy, true); home[n.id] = a;
       var src = home[n.cont] || home[n.parent] || home.main; // where its walk in starts
+      var k = n.rank === 'boss' ? 3 : n.rank === 'elite' ? 2 : 1, ex = a[0] + 1, ey = a[1], box = {}, i, j;
+      if (k > 1) { // the enemy's box stands on the hero's row, right of the hero, and is pulled back inside the room if it would stick out
+        ex = Math.max(q.x, Math.min(ex, q.x + q.w - k)); ey = Math.max(q.y, Math.min(a[1] + 1 - k, q.y + q.h - k));
+      }
+      for (i = 0; i < k; i++) for (j = 0; j < k; j++) box[(ex + i) + ',' + (ey + j)] = 1;
       out.push({ id: n.id, kind: 'hero', idx: sprite(n), x: a[0], y: a[1], state: n.running ? 'fight' : 'win',
-        foe: FOES[D.prng(seed + '/foe/' + n.id)() * FOES.length | 0], fx: a[0] + 1, fy: a[1], free: room(q, (a[0] + 1) + ',' + a[1]),
+        foe: n.rank === 'boss' ? BOSS : FOES[D.prng(seed + '/foe/' + n.id)() * FOES.length | 0], fx: a[0] + 1, fy: a[1], free: room(q, box),
+        rank: n.rank === 'boss' || n.rank === 'elite' ? n.rank : null, fk: k, ex: ex, ey: ey, // fk: the enemy's size in cells; ex, ey: its top left cell
         failed: sprite(n) === HERO.ghost[2] * 12 + HERO.ghost[1], from: src || a, key: !!home[n.cont] }); // berserk: Dungeon.glow() lights its room green
     });
     return out;
@@ -135,17 +174,27 @@
     return (tints[k] = c);
   }
 
+  function dragon(flash) { // DRAGON as a cached 24x24 canvas; flash = its white silhouette (the hit flash)
+    var k = 'dragon' + !!flash, c = tints[k], x;
+    if (c) return c;
+    c = tints[k] = document.createElement('canvas'); c.width = c.height = 24; x = c.getContext('2d');
+    DRAGON.forEach(function (row, j) { for (var i = 0; i < 24; i++) if (row[i] !== '.') { x.fillStyle = flash ? '#fff' : DRAGON_PAL[row[i]]; x.fillRect(i, j, 1, 1); } });
+    return c;
+  }
+
   // Every offset is a whole number of sprite pixels and every animation steps (no tweening), so it stays pixel art.
   // still = true (reduced motion) draws each state's resting pose.
   function draw(ctx, d, actors, sheets, scale, now, still) {
     var S = 16 * scale, p = scale, td = sheets.td, i;
     ctx.imageSmoothingEnabled = false;
-    function spr(idx, x, y, o) {
+    function spr(idx, x, y, o) { // o: alpha, flip, rot, flash (white silhouette), k (size in cells); idx BOSS = the hand-drawn dragon
       o = o || {};
+      var K = S * (o.k || 1);
       ctx.save(); ctx.globalAlpha = o.alpha == null ? 1 : o.alpha;
-      ctx.translate(x + S / 2, y + S / 2); if (o.flip) ctx.scale(-1, 1); if (o.rot) ctx.rotate(o.rot);
-      if (o.flash) ctx.drawImage(tinted(td, 12, idx, '#fff', 1), -S / 2, -S / 2, S, S);
-      else ctx.drawImage(td, idx % 12 * 16, (idx / 12 | 0) * 16, 16, 16, -S / 2, -S / 2, S, S);
+      ctx.translate(x + K / 2, y + K / 2); if (o.flip) ctx.scale(-1, 1); if (o.rot) ctx.rotate(o.rot);
+      if (idx === BOSS) ctx.drawImage(dragon(o.flash), -K / 2, -K / 2, K, K);
+      else if (o.flash) ctx.drawImage(tinted(td, 12, idx, '#fff', 1), -K / 2, -K / 2, K, K);
+      else ctx.drawImage(td, idx % 12 * 16, (idx / 12 | 0) * 16, 16, 16, -K / 2, -K / 2, K, K);
       ctx.restore();
     }
     function ob(idx, x, y, alpha, gold) {
@@ -162,7 +211,12 @@
       if (a.kind === 'gm') return rest(a, a.idx); // always roams the hall; casts at each stop while work is going on
       if (a.kind === 'wf') return spr(a.idx, X + (a.state === 'fight' ? (step(300, 2, off) ? p : -p) : 0), Y, { alpha: a.failed ? 0.5 : 1 });
 
-      var FX = (a.fx - d.ox) * S, tr = still ? null : a.trip, el = now - a.since;
+      var FX = (a.ex - d.ox) * S, FY = (a.ey - d.oy) * S, K = a.fk, YM = FY + (K - 1) * 8 * p, YB = FY + (K - 1) * S, tr = still ? null : a.trip, el = now - a.since;
+      function foe(x, y, o) { // the enemy at its size: the boss's dragon already faces left, the rest are flipped to face the hero
+        o = o || {}; o.k = K; o.flip = a.rank !== 'boss';
+        spr(a.foe, x, y, o);
+      }
+      function crown(y) { if (a.rank === 'boss') ob(OB_CROWN, FX + (K - 1) * S / 2, y, 1, true); } // a gold crown over the boss's head, on the floor once it has fallen
       if (tr) { // spawned while you watched: walks in while its enemy waits, even if its job has ended meanwhile
         if (!tr.cells) tr.cells = trip(d, a);
         var f = (now - tr.t0) / TRIP_MS, n = Math.floor(f), c1 = tr.cells[n], c0 = n ? tr.cells[n - 1] : a.from;
@@ -170,7 +224,8 @@
           var TX = Math.round((c0[0] + (c1[0] - c0[0]) * (f - n) - d.ox) * 16) * p, TY = Math.round((c0[1] + (c1[1] - c0[1]) * (f - n) - d.oy) * 16) * p;
           spr(a.idx, TX, TY - step(220, 2, off) * p, { flip: c1[0] < c0[0] });
           if (a.key) ob(OB_KEY, TX, TY - S + 2 * p, 1);
-          return spr(a.foe, FX, Y - step(1600, 2, off) * p, { flip: true });
+          foe(FX, FY - step(1600, 2, off) * p); crown(FY - S + 3 * p - step(1600, 2, off) * p);
+          return;
         }
         el = Math.min(el, now - tr.t0 - tr.cells.length * TRIP_MS - BOUT_MS); // the victory starts after it arrived and struck once
       }
@@ -179,18 +234,18 @@
         var hx = [0, 2, 4, 1, 0, 0][k] * p, ex = [0, 0, 2, 1, -3, 0][k] * p;
         spr(a.idx, X + hx, Y);
         if (k === 4) spr(a.idx, X + hx, Y, { flash: true, alpha: 0.6 });
-        spr(a.foe, FX + ex, Y, { flip: true, flash: k === 2 });
+        foe(FX + ex, FY, { flash: k === 2 }); crown(FY - S + 3 * p - (k === 2 ? 2 * p : 0));
         if (k === 2) {
           for (i = 0; i < 4; i++) dot('#ffffff', X + S + i * p, Y + (2 + i * 3) * p, 2);
-          dot('#ffd23f', FX + 2 * p, Y + 2 * p); dot('#ffd23f', FX + 12 * p, Y + 5 * p); dot('#ff5a5a', FX + 7 * p, Y);
+          dot('#ffd23f', FX + 2 * p, YM + 2 * p); dot('#ffd23f', FX + 12 * p, YM + 5 * p); dot('#ff5a5a', FX + 7 * p, YM);
         }
         return;
       }
       // Finished: for 1.6 s after the change the enemy blinks and falls, the hero hops twice under a raised trophy
       // with a burst of gold; after that the hero rests and cheers (a hop and a sparkle) every few seconds.
       var v = still ? 1 : Math.min(1, el / 1600), fell = v > 0.3;
-      if (fell) { ob(OB_BONES, FX, Y + 2 * p, 0.9); spr(a.foe, FX, Y + 3 * p, { flip: true, rot: Math.PI / 2, alpha: 0.55 }); }
-      else spr(a.foe, FX, Y, { flip: true, flash: step(200, 2, 0) === 1 });
+      if (fell) { ob(OB_BONES, FX, YB + 2 * p, 0.9); foe(FX, FY + 3 * p, { rot: Math.PI / 2, alpha: 0.55 }); crown(YB + 2 * p); }
+      else { foe(FX, FY, { flash: step(200, 2, 0) === 1 }); crown(FY - S + 3 * p); }
       if (v < 1) {
         var hop = Math.round(Math.abs(Math.sin(v * 2 * Math.PI)) * 6) * p;
         spr(a.idx, X, Y - hop);
@@ -230,7 +285,7 @@
     }
   }
 
-  var Actors = { place: place, stamp: stamp, draw: draw, walk: walk, trip: trip, sprite: sprite, HERO: HERO, FOES: FOES, OPEN_CHEST: OPEN_CHEST };
+  var Actors = { place: place, stamp: stamp, draw: draw, walk: walk, trip: trip, sprite: sprite, HERO: HERO, FOES: FOES, BOSS: BOSS, DRAGON: DRAGON, DRAGON_PAL: DRAGON_PAL, OPEN_CHEST: OPEN_CHEST };
   if (typeof module !== 'undefined' && module.exports) module.exports = Actors;
   root.Actors = Actors;
 })(typeof window !== 'undefined' ? window : this);

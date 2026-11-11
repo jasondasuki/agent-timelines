@@ -1,7 +1,7 @@
 {
   "name": "agent-timelines",
   "displayName": "Agent Timelines",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Live pixel-art dashboard of Claude Code sessions and their subagents: who spawned whom, models, tools, cost.",
   "author": { "name": "jasondasuki", "url": "https://github.com/jasondasuki" },
   "homepage": "https://github.com/jasondasuki/agent-timelines",

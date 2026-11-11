@@ -79,6 +79,41 @@ def test_build_keeps_both_closed_ids():
         tl.OUT_DIR, tl.load = keep, load
 
 
+def test_rebuild_and_achievements():
+    """rebuild fills achievements.js (once per session, however often it runs) and `achievements` lists it."""
+    from datetime import datetime, timezone
+    from agent_timelines import timeline as tl
+    d = tempfile.mkdtemp()
+    pd = os.path.join(d, "projects", "p")
+    os.makedirs(os.path.join(pd, "r1", "subagents"))
+    t0 = time.time() - 120
+    ts = lambda sec: datetime.fromtimestamp(t0 + sec, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    line = lambda sec, msg: json.dumps({"type": "assistant", "timestamp": ts(sec), "cwd": "/w", "message": msg}) + "\n"
+    spawn = {"id": "m1", "model": "claude-opus-5", "content": [{"type": "tool_use", "id": "s0", "name": "Agent", "input": {"subagent_type": "general-purpose", "model": "opus", "effort": "high"}}]}
+    open(os.path.join(pd, "r1.jsonl"), "w").write(line(0, spawn) + line(20, {"id": "m2", "stop_reason": "end_turn", "model": "claude-opus-5", "content": [{"type": "text", "text": "ok"}]}))
+    json.dump({"agentType": "general-purpose", "toolUseId": "s0", "description": "d"}, open(os.path.join(pd, "r1", "subagents", "agent-a0.meta.json"), "w"))
+    open(os.path.join(pd, "r1", "subagents", "agent-a0.jsonl"), "w").write(line(10, {"id": "f", "stop_reason": "end_turn", "model": "claude-opus-5", "content": [{"type": "text", "text": "done"}]}))
+    keep = (tl.PROJECTS, tl.OUT_DIR)
+    out = io.StringIO()
+    try:
+        tl.PROJECTS, tl.OUT_DIR = os.path.join(d, "projects"), os.path.join(d, "out")
+        for _ in range(2):
+            cli.main(["rebuild"])
+        sv = tl.read_save(os.path.join(tl.OUT_DIR, tl.SAVE))
+        assert "first" in sv["unlocked"] and tl.totals(sv)["sessions"] == 1 and tl.totals(sv)["heroes"] == 1, sv
+        assert re.search(r'"badges": ?\["first"\]', open(os.path.join(tl.OUT_DIR, "r1.data.js")).read())
+        old, sys.stdout = sys.stdout, out
+        try:
+            cli.main(["achievements"])
+        finally:
+            sys.stdout = old
+    finally:
+        tl.PROJECTS, tl.OUT_DIR = keep
+    lines = out.getvalue().splitlines()
+    assert len(lines) == len(tl.ACHIEVEMENTS) + 1 and lines[0].startswith("[x] First Blood") and lines[1].startswith("[ ] Full Party"), out.getvalue()
+    assert lines[-1].startswith("1/%d unlocked" % len(tl.ACHIEVEMENTS)) and "1 heroes" in lines[-1], lines[-1]
+
+
 def test_serve_refuses_cross_site():
     d = tempfile.mkdtemp()
     open(os.path.join(d, "index.data.js"), "w").write("TL({});\n")
@@ -118,5 +153,6 @@ if __name__ == "__main__":
     test_plugin_files()
     test_hook_via_plugin()
     test_build_keeps_both_closed_ids()
+    test_rebuild_and_achievements()
     test_serve_refuses_cross_site()
     print("ok")

@@ -379,7 +379,8 @@
 
   // The moving part, drawn every frame over the map and its characters: darkness with a stepped pool of light
   // round every flame (characters carry none), then the flames, embers and sparkles themselves on top (they glow).
-  // A room where the agent is still working burns brighter; one that failed or went berserk turns sickly green.
+  // A room where the agent is still working burns brighter; one that failed or went berserk turns sickly green;
+  // a boss room (actor.rank) turns blood red while the boss fights (drawing only, the layout never reads rank).
   // actors = Actors.place() output after stamp(); still = true (reduced motion) freezes every flicker.
   function glow(ctx, d, scale, now, still, actors) {
     var P = scale, S = 16 * P, L = d.light, mood = {}, lights = [];
@@ -394,16 +395,20 @@
       m.fillStyle = 'rgba(0,0,0,.55)';
       d.paths.forEach(function (p) { p.cells.forEach(function (c) { m.fillRect((c[0] - d.ox) * GL, (c[1] - d.oy) * GL, GL, GL); }); });
     }
-    var tick = still ? 0 : Math.floor(now / 70), key = tick + '|' + (actors || []).map(function (a) { return a.state; }).join();
+    var tick = still ? 0 : Math.floor(now / 70), key = tick + '|' + (actors || []).map(function (a) { return a.state + (a.rank || ''); }).join();
     if (L.key !== key) { // the light map only changes with a flicker step or a new state: redo it then, not every frame
       L.key = key;
       (actors || []).forEach(function (a) {
-        mood[a.id] = a.failed ? 'bad' : a.state === 'fight' ? 'hot' : '';
+        mood[a.id] = a.failed ? 'bad' : a.rank === 'boss' && a.state === 'fight' ? 'boss' : a.state === 'fight' ? 'hot' : '';
       });
       d.fx.forEach(function (e, j) {
         var k = LIGHT[e.k], q = d.rooms[e.room], md = mood[q.id];
-        if (k) lights.push({ x: e.x + k[3], y: e.y + k[4], r: k[0] * (md === 'hot' ? 1.2 : md ? 0.85 : 1), a: k[1],
-          c: md === 'bad' ? '120,255,170' : k[2], q: q, n: j });
+        if (k) lights.push({ x: e.x + k[3], y: e.y + k[4], r: k[0] * (md === 'hot' || md === 'boss' ? 1.2 : md ? 0.85 : 1), a: k[1],
+          c: md === 'bad' ? '120,255,170' : md === 'boss' ? '255,50,40' : k[2], q: q, n: j, t: md === 'boss' ? 2.5 : 1 });
+      });
+      d.rooms.forEach(function (q) { // a boss room with no flame still gets the red glow: one pool at its centre
+        if (mood[q.id] === 'boss' && !lights.some(function (l) { return l.q === q; }))
+          lights.push({ x: q.x + q.w / 2, y: q.y + q.h / 2, r: Math.max(q.w, q.h) * 0.8, a: 0.5, c: '255,50,40', q: q, n: 99, t: 2.5 });
       });
       var g = L.c.getContext('2d');
       g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, L.c.width, L.c.height);
@@ -415,7 +420,7 @@
           var q = l.q, x = (l.x - d.ox) * GL, y = (l.y - d.oy) * GL;
           var r = l.r * GL * (still ? 1 : 0.94 + 0.12 * noise(l.n, Math.floor(now / 140))), gr = g.createRadialGradient(x, y, 0, x, y, r);
           [[0, 1], [0.36, 1], [0.37, 0.62], [0.68, 0.62], [0.69, 0.3], [1, 0.3]].forEach(function (s) {
-            gr.addColorStop(s[0], pass ? 'rgba(' + l.c + ',' + (s[1] > 0.3 ? 0.15 * s[1] * l.a : 0) + ')' : 'rgba(0,0,0,' + s[1] * l.a + ')');
+            gr.addColorStop(s[0], pass ? 'rgba(' + l.c + ',' + (s[1] > 0.3 ? Math.min(0.15 * l.t * s[1] * l.a, 0.4) : 0) + ')' : 'rgba(0,0,0,' + s[1] * l.a + ')');
           });
           g.save(); g.beginPath(); g.rect((q.x - 1 - d.ox) * GL, (q.y - 1 - d.oy) * GL, (q.w + 2) * GL, (q.h + 2) * GL); g.clip(); // light stays in its room and on its walls
           g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill(); g.restore();

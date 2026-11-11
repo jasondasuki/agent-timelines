@@ -123,6 +123,16 @@ def rebuild(a):
     print("rebuilt %d sessions into %s" % (len(files), tl.OUT_DIR))
 
 
+def achievements(a):
+    """Every achievement with its unlock state, then the lifetime totals, from the save file."""
+    save = tl.read_save(os.path.join(tl.OUT_DIR, tl.SAVE))
+    for i, name, desc, _, _ in tl.ACHIEVEMENTS:
+        u = save["unlocked"].get(i)
+        print("[%s] %-16s %-52s %s" % ("x" if u else " ", name, desc, "%s (%s)" % (datetime.fromtimestamp(u["t"]).strftime("%Y-%m-%d"), str(u.get("sid"))[:8]) if u else ""))
+    t = tl.totals(save)
+    print("%d/%d unlocked · %d heroes · %d sessions · $%.2f · best streak %d days" % (sum(r[0] in save["unlocked"] for r in tl.ACHIEVEMENTS), len(tl.ACHIEVEMENTS), t["heroes"], t["sessions"], t["usd"], t["streak"]))
+
+
 def list_(a):
     for p in tl.find()[:20]:
         n = len(glob.glob(os.path.join(p[:-6], "subagents", "*.meta.json")))
@@ -199,6 +209,7 @@ def main(argv=None):
     sp.add_argument("session", nargs="?")
     sp.set_defaults(fn=open_)
     sub.add_parser("list", help="list recent sessions").set_defaults(fn=list_)
+    sub.add_parser("achievements", help="list the achievements and which are unlocked").set_defaults(fn=achievements)
     sp = sub.add_parser("rebuild", help="regenerate data for recent sessions from their transcripts")
     sp.add_argument("--days", type=float, default=tl.RETAIN_DAYS)
     sp.set_defaults(fn=rebuild)
