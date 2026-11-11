@@ -12,10 +12,16 @@ session works. Everything is read from your local transcripts; nothing leaves yo
   Live dungeons get a full row; the hall of records is one short line per past session. There is search, a project filter and
   paging (`/` focuses the search box, left/right change the page). A ledger on top sums what the listed sessions cost:
   today, the last 7 days by day, and the costliest projects (click one to filter).
+- **Trophy room**: a box in the lobby with every achievement (`7/19`): unlocked ones in gold with their date, locked ones dim with their condition,
+  plus your lifetime heroes, sessions, spend and best streak. A session's own badges show under its title, and a toast announces an unlock this browser has not seen.
+  See [Achievements](#achievements).
 - **Chart view**: the delegation tree as a party of heroes, with flags for rule breaks (no model set,
   model mismatch, ignored tool limit, unanswered handoff, …).
   Each card shows the agent's top tools and the start of its final reply; the detail panel lists every tool and the full report
   (a running agent shows what it is saying now).
+  - **Boss and elite**: in a party of 3 or more heroes, the costliest one (by API price, ties to the earliest spawn) is the BOSS and any other hero costing at least half
+    as much is ELITE. They get a chip, a Rank row in the detail panel and a map tooltip name; on the map an elite fights a double-size enemy, the boss a 3x red dragon
+    under a crown, and the boss's room glows red while it fights. Rank follows cost, so it can change while a session runs; it only changes the drawing, never the map layout.
 - **Timeline view**: one bar per agent on a shared clock, rows in party-tree order, so you can see who ran when and what overlapped.
   Running agents get a striped bar; zoom with + and -.
 - **Map view**: the same session as a procedurally generated, torch-lit dungeon. The main session is the guild master
@@ -62,15 +68,45 @@ Start or continue a Claude Code session; it appears in the lobby on its first ho
 | `uninstall [--settings PATH]` | Remove the hooks. Your data folder stays. |
 | `serve [--port N] [--no-browser]` | Serve the dashboard on 127.0.0.1. |
 | `open [SESSION-PREFIX]` | Build one session (newest by default) and open it from disk, no server. |
-| `rebuild [--days N]` | Regenerate data for recent sessions from their transcripts. |
+| `rebuild [--days N]` | Regenerate data for recent sessions from their transcripts (also fills the achievements save file). |
+| `achievements` | List every achievement with its unlock state and your lifetime totals. |
 | `list` | Recent sessions with their subagent counts. |
 | `version` (or `--version`) | Print the version. |
 
 `--settings` targets another Claude config dir, e.g. `--settings ~/.claude-work/settings.json`.
 `CLAUDE_CONFIG_DIR` is respected for the default paths.
 
-Data lives in `~/.claude/agent-timelines/` (one `<session>.data.js` and one `<session>.prompts.js` per session, removed after 30 days untouched).
+Data lives in `~/.claude/agent-timelines/` (one `<session>.data.js` and one `<session>.prompts.js` per session, removed after 30 days untouched,
+and `achievements.js`, the save file, which is never removed).
 The pages hold prompt text from your sessions, which is why `serve` binds to localhost only and refuses requests that come from other sites (wrong `Host`, or a cross-site script or fetch).
+
+## Achievements
+
+`achievements.js` (next to the data files, loaded by the pages like them) is the save file: your unlocked achievements (`{id: {t, sid}}`, the earliest unlock wins),
+a record per session younger than `retain_days` (heroes, spend), the totals of the older ones, and the days you were active (for the streak). Lifetime totals survive the
+30-day purge and do not grow when a session is rebuilt, because a session's record is overwritten, not added. A session already older than `retain_days` is never entered,
+so `rebuild` cannot count old transcripts twice; a session resumed after it was folded in counts its old part again (the known limit). Session achievements are judged
+only once the session is settled (main session idle, no agent running). Writes take a lock and are atomic; a corrupt or missing file starts fresh. The rules are one
+table, `ACHIEVEMENTS` in `timeline.py`, with the names and conditions copied into the file, so adding one is one line. Delete the file to reset your trophies.
+
+| Achievement | Condition |
+|---|---|
+| First Blood | A hero finished its job |
+| Full Party / Legion | 5 / 15 or more heroes in one session |
+| Flawless | 5 or more heroes and no issue flags |
+| Penny Pincher | 5 or more heroes for under $1 (every model priced) |
+| Dragon's Hoard | A session over $50 |
+| Boss Slayer | The boss finished with no issue flags and no handoff |
+| Relay / Key Master | A handoff was continued / 3 or more in one session |
+| Treasure Hunter | A Workflow run finished |
+| Assemble | 4 or more classes in one session |
+| Speedrun | A hero finished in under 30 s |
+| Swarm | 5 or more heroes running at once |
+| Haunted | A hero went berserk (needs `tool_limit`) |
+| Centurion / Thousand Blades | 100 / 1000 heroes in total |
+| Veteran | 100 sessions |
+| Treasury | $1000 of API-price spend in total |
+| Seven Days | Active 7 days in a row |
 
 ## Config (optional)
 
@@ -118,7 +154,7 @@ applied), batch discounts, Bedrock and Vertex prices, web-search and other serve
 
 ```sh
 python3 tests/test_timeline.py && python3 tests/test_cli.py   # Python
-node tests/test_dungeon.js && node tests/test_actors.js && node tests/test_lobby.js && node tests/test_gantt.js   # viewer scripts (Node 18+)
+node tests/test_dungeon.js && node tests/test_actors.js && node tests/test_lobby.js && node tests/test_gantt.js && node tests/test_trophy.js   # viewer scripts (Node 18+)
 open dev/dungeon-demo.html                                     # dungeon playground: agents, working, reset
 ```
 

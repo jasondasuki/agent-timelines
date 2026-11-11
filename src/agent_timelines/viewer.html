@@ -148,6 +148,12 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 #lparty .hero{animation:idle 1.6s steps(1) infinite}#lparty .run{animation:walk .5s steps(1) infinite}
 .hint{color:var(--mut);font-size:8px;margin-top:14px}
 @media (max-width:760px){.lrow,.lhead{grid-template-columns:14px minmax(0,1fr) 56px 64px 70px}.lrow.rec{grid-template-columns:14px minmax(0,1fr) 44px 72px 40px}.lrow>:nth-child(n+6),.lhead>:nth-child(n+6){display:none}.logo{font-size:24px}.logo span{font-size:16px}}
+/* trophy room (lobby) and the badges of one session (hud); a toast when an unlock is new to this browser */
+#trophy{margin-top:14px}#trophy summary{color:var(--gold);cursor:pointer;font-size:10px}#trophy summary:focus-visible{outline:3px solid var(--gold);outline-offset:2px}#trophy .stats{margin:8px 0}
+#tlist{list-style:none;margin:8px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px}
+#tlist li{display:flex;gap:8px;align-items:flex-start;padding:6px;border:2px dashed var(--hi);color:var(--mut);overflow-wrap:anywhere}#tlist .spr{opacity:.35;filter:grayscale(1)}
+#tlist li.got{border:2px solid var(--gold);color:var(--fg)}#tlist li.got .spr{opacity:1;filter:none}#tlist li.got b{color:var(--gold)}#tlist b{display:block;font-weight:400}#tlist .mut{display:block;margin-top:2px}
+#toast{position:fixed;z-index:25;left:0;right:0;bottom:16px;margin:0 auto;width:max-content;max-width:calc(100vw - 24px);padding:10px 12px;display:flex;gap:10px;align-items:center;color:var(--gold);font-size:8px;animation:slide .3s steps(4)}
 @keyframes across{to{transform:translateX(calc(100vw + 128px))}}
 @keyframes blink{50%{opacity:0}}
 @keyframes idle{0%{transform:none}50%{transform:translateY(-2px)}}
@@ -164,23 +170,24 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 <h2>LIVE DUNGEONS</h2><div class="lhead" aria-hidden="true"><span></span><span>DUNGEON</span><span>PARTY</span><span>QUESTING</span><span>COST</span><span>ISSUES</span><span>STATUS</span><span>SEEN</span></div>
 <div id="lv"></div><h2>HALL OF RECORDS</h2><div id="hr"></div>
 <div class="pager" id="lpager" hidden><button class="btn" id="lprev" type="button">&lt; PREV</button><span id="lpage" class="mut" aria-live="polite"></span><button class="btn" id="lnext" type="button">NEXT &gt;</button></div></div>
-<div class="px" id="lparty" aria-live="polite"></div><p class="hint">UP/DOWN SELECT · ENTER JOIN · / SEARCH · LEFT/RIGHT PAGE · REFRESHES EVERY 3S</p></section>
+<div class="px" id="lparty" aria-live="polite"></div>
+<details open id="trophy" class="px lbox" aria-label="Trophy room: achievements" hidden><summary id="tsum">TROPHY ROOM</summary><div id="ttot"></div><ul id="tlist" aria-label="Achievements"></ul></details><p class="hint">UP/DOWN SELECT · ENTER JOIN · / SEARCH · LEFT/RIGHT PAGE · REFRESHES EVERY 3S</p></section>
 <header id="hud" class="px"><h1><span id="h1">Loading…</span><span class="views" role="group" aria-label="View"><a class="btn" id="vlobby" href="index.html">&lt; LOBBY</a><button class="btn" id="vchart" type="button" aria-pressed="true">CHART</button><button class="btn" id="vmap" type="button" aria-pressed="false">MAP</button><button class="btn" id="vtime" type="button" aria-pressed="false">TIMELINE</button></span></h1>
-<div class="stats" id="stats"></div><div id="meta" class="meta mut"></div><div id="xp" class="xp" title="Gold by model family"></div><div id="err" class="err" hidden></div>
+<div class="stats" id="stats"></div><div id="meta" class="meta mut"></div><div id="badges" class="fl" role="group" aria-label="Achievements earned in this session" hidden></div><div id="xp" class="xp" title="Gold by model family"></div><div id="err" class="err" hidden></div>
 <details><summary>How to read the dungeon</summary><dl id="legend"></dl></details>
 <details><summary>Cost by model</summary><dl id="costs"></dl></details></header>
 <div class="wrap" id="main"><div id="graph" class="px" tabindex="0" aria-label="Party tree: the guild master on the left, the heroes they sent out to the right"></div><div id="mapbox" class="px" hidden><div class="mapbar"><button class="btn" id="zout" type="button" aria-label="Zoom out">−</button><span id="zl" class="mut">2X</span><button class="btn" id="zin" type="button" aria-label="Zoom in">+</button><button class="btn" id="rplay" type="button" aria-pressed="false">REPLAY</button><input id="rt" type="range" step="1" aria-label="Replay: the map at an earlier moment of the session"><span id="rl" class="mut">NOW</span><span class="mut">hover a room, click for details</span></div><div id="mapscroll"><canvas id="map" aria-label="Dungeon map: one room per agent; hover a room for its agent, click it for details"></canvas></div></div>
 <div id="gantt" class="px" hidden><div class="mapbar"><button class="btn" id="gout" type="button" aria-label="Zoom out">−</button><span id="gzl" class="mut">1X</span><button class="btn" id="gin" type="button" aria-label="Zoom in">+</button><button class="btn" id="gfit" type="button">FIT</button><span class="mut">click a bar for details</span></div><div id="gscroll"><div id="ginner"><div class="gaxis" id="gaxis" aria-hidden="true"></div><div id="grows" role="group" aria-label="Agents on a shared time axis"></div><div id="gcols" aria-hidden="true"></div></div></div></div>
 <aside id="side" class="px" aria-label="Quest log and party"><h2>QUEST LOG</h2><ol id="feed"></ol><details><summary>Whole party</summary><ol id="list"></ol></details></aside></div>
-<div id="tip" class="px" role="tooltip" hidden></div><aside id="panel" class="px" role="dialog" aria-label="Hero details" hidden><button id="px" type="button" aria-label="Close">×</button><div id="pb"></div></aside>
-<script src="dungeon.js"></script><script src="actors.js"></script><script src="lobby.js"></script><script src="gantt.js"></script><script src="sky.js"></script>
+<div id="tip" class="px" role="tooltip" hidden></div><div id="toast" class="px" role="status" aria-live="polite" hidden><span id="tt"></span><button class="btn" id="tx" type="button" aria-label="Dismiss">×</button></div><aside id="panel" class="px" role="dialog" aria-label="Hero details" hidden><button id="px" type="button" aria-label="Close">×</button><div id="pb"></div></aside>
+<script src="dungeon.js"></script><script src="actors.js"></script><script src="lobby.js"></script><script src="gantt.js"></script><script src="sky.js"></script><script src="trophy.js"></script>
 <script>
 (function(){"use strict";
 var SID=(/[?&]sid=([\w-]+)/.exec(location.search)||[])[1],INDEX=!SID,DATA=INDEX?"index.data.js":SID+".data.js";
 var FAMS=["fable","mythos","opus","sonnet","haiku","other"];
 /* sprite cells [sheet, column, row]: td = Tiny Dungeon (12 columns), ob = 1-Bit Pack (48 columns) */
 var HERO={main:["td",0,7],executor:["td",0,8],scanner:["td",1,7],plan:["td",4,8],writer:["td",3,8],runner:["td",4,7],other:["td",3,7],workflow:["td",5,7],wfrun:["td",8,7],ghost:["td",1,10]};
-var ICON={heart:["ob",39,10],heart0:["ob",40,10],coin:["ob",43,12],skull:["ob",38,11],key:["ob",32,11],hourglass:["ob",39,12],trophy:["ob",40,16],stop:["ob",37,21],warn:["ob",35,21],potion:["ob",39,11],chest:["td",5,7]};
+var ICON={heart:["ob",39,10],heart0:["ob",40,10],coin:["ob",43,12],skull:["ob",38,11],key:["ob",32,11],hourglass:["ob",39,12],trophy:["ob",40,16],crown:["ob",43,2],stop:["ob",37,21],warn:["ob",35,21],potion:["ob",39,11],chest:["td",5,7]};
 var TITLE={main:"GUILD MASTER",executor:"KNIGHT",scanner:"ROGUE",plan:"SAGE",writer:"BARD",runner:"BARBARIAN",other:"VIKING",workflow:"TREASURE RUN"};
 var FLAGTXT={"no-model":"The spawn call set no model.","no-effort":"The spawn call set no effort.",
 "model-mismatch":"A gateway or fallback ran a different model than requested.","effort-mismatch":"The effort that ran differs from the one requested.",
@@ -229,11 +236,12 @@ var REAL={main:"the main Claude Code session (planner)",executor:"an executor ag
 plan:"a Plan agent",writer:"a writer agent",runner:"a runner agent",other:"an agent of another type",workflow:"a Workflow run (a group of agents run by a script)"};
 var STREAL={QUESTING:"running now",RESTING:"session is live, main session is waiting for you",HOME:"session ended",VICTORY:"finished",
 RETREATED:"stopped at the tool-call limit and handed off",BERSERK:"got the tool-limit message, wrote no handoff and kept going",DEFEATED:"failed: killed, or no result recorded"};
+var RANKTXT={boss:"Boss: the costliest hero of a party of 3 or more.",elite:"Elite: costs at least half as much as the boss."};
 function chip(fl,c,icon,txt,tip){var k=el("span","chip "+c);if(icon)k.append(spr(icon,1));k.append(txt);k.title=tip;fl.append(k)}
 function card(d,n){
 var st=state(d,n),c=el("div","card px"),bad=issues(n),fl=el("div","fl"),t=dur(d,n),lim=!!d.toolLimit&&n.id!=="main"&&!n.exempt,p=prev[n.id];
 c.dataset.id=n.id;c.dataset.st=st[0];c.dataset.fam=famOf(n);c.tabIndex=0;c.setAttribute("role","button");c.title=n.desc||"";
-c.setAttribute("aria-label",name(n)+", "+st[1]+", "+(n.desc||"")+(bad.length?", "+plural(bad.length,"issue"):""));
+c.setAttribute("aria-label",name(n)+", "+st[1]+", "+(n.desc||"")+(n.rank?", "+n.rank:"")+(bad.length?", "+plural(bad.length,"issue"):""));
 if(bad.length)c.dataset.bad="1";if(sel===n.id)c.classList.add("sel");
 if(!first&&!p)c.classList.add("spawn");else if(p&&p.run&&!n.running&&st[0]==="ok")c.classList.add("win");
 var top=el("div","c1"),who=el("div","who");who.append(el("b",null,name(n)),el("span","tag",st[1]),q(name(n)+" · "+st[1],(n.id==="main"?"":"agent "+n.n+": ")+REAL[cls(n)]+" ("+n.type+") · "+STREAL[st[1]]));
@@ -246,6 +254,7 @@ var gold=el("span","nums",n.tokens?ftok(n.tokens):"–");gold.title="Gold = inpu
 var r3=el("div","row"),cost=el("span","nums",usd(n.usd)+(n.unpriced?"+":"")+" API price");cost.title="$ = API list price for these tokens"+(n.unpriced?" (some models have no price set, so the real figure is higher)":"");
 r2.append(spr(ICON.hourglass,1),el("span","nums",t==null?"–":fdur(t)),spr(ICON.coin,1),gold,
 q(lim?"hearts · hourglass · gold · $":"potion · hourglass · gold · $",(lim?"hearts = tool calls left before the "+d.toolLimit+"-call limit ("+n.tools+" used)":n.tools+" tool calls (no limit applies)")+" · hourglass = run time · gold = input-equivalent tokens · $ = API list price for these tokens"));
+if(n.rank==="boss")chip(fl,"key",ICON.crown,"BOSS",RANKTXT.boss);else if(n.rank==="elite")chip(fl,"","","ELITE",RANKTXT.elite);
 bad.forEach(function(f){if(f!=="handoff-not-continued")chip(fl,"flag",ICON.skull,f==="guard-block"?plural(d.denials,"guard block"):f,FLAGTXT[f]||f)});
 if(n.cont&&by[n.cont])chip(fl,"key",ICON.key,"FROM #"+by[n.cont].n,"Picked up the key: continues the work of #"+by[n.cont].n);
 if(n.handoff){var m=d.agents.filter(function(a){return a.cont===n.id})[0];
@@ -298,7 +307,7 @@ if(b.tagName==="BUTTON"){b.type="button";b.addEventListener("click",function(){o
 li.append(b);return li}));
 $("list").replaceChildren.apply($("list"),[P].concat(ags).map(function(n){var li=el("li"),b=el("button"),st=state(d,n);b.type="button";
 b.append(spr(sprite(n,st),1),el("span",null,name(n)+" · "+st[1]+" · "+(n.desc||"").slice(0,40)));b.addEventListener("click",function(){openPanel(n.id)});li.append(b);return li}));
-if(VIEW==="time")drawGantt(d);if(sel)fill();syncReplay();first=false;if(VIEW==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
+drawBadges();if(VIEW==="time")drawGantt(d);if(sel)fill();syncReplay();first=false;if(VIEW==="map"&&!M.raf)M.raf=requestAnimationFrame(mapFrame)}
 
 function famUsd(d,f){return d.cost.models.reduce(function(k,m){return k+(m.fam===f?m.usd:0)},0)}
 function costs(d){var dl=$("costs"),c=d.cost;dl.replaceChildren();
@@ -320,6 +329,7 @@ if(n.n&&n.kind!=="wf")pb.append(kv("Model/effort","asked "+n.req+" → ran "+n.r
 pb.append(kv("Time",t==null?"–":(n.running?"questing ":"")+fdur(t)),kv("Tools",n.tools+(d.toolLimit&&n.n&&!n.exempt?" of "+d.toolLimit:"")),kv("Gold",n.tokens?n.tokens.toLocaleString()+" input-equiv tokens":"–"),kv("Cost",usd(n.usd)+(n.unpriced?" (some models have no price set)":"")));
 if(n.tok)pb.append(kv("Split",tokTxt(n.tok)),kv("Peak context",n.peak?n.peak.toLocaleString()+(n.peak>=d.ctxLimit?" (over "+d.ctxLimit.toLocaleString()+")":""):"–"));
 if(n.n)pb.append(kv("Class",n.tier+" ("+n.type+")"),kv(n.kind==="wf"?"Run id":"Agent id",n.id),kv("Sent by",by[n.parent]?name(by[n.parent]):"GUILD MASTER"));
+if(n.rank){var bo=d.agents.filter(function(a){return a.rank==="boss"})[0];pb.append(kv("Rank",n.rank.toUpperCase()+": "+(n.rank==="boss"?"the costliest hero of the party":"costs at least half as much as the boss"+(bo?" (#"+bo.n+", "+usd(bo.usd)+")":""))))}
 if(n.phase)pb.append(kv("Phase",n.phase));
 if(n.brief)pb.append(kv("Brief",n.brief.toLocaleString()+" chars"));
 if(n.wf){var w=n.wf;pb.append(kv("Workflow",w.name),kv("Agents",w.agents+(Object.keys(w.states).length?" ("+Object.keys(w.states).map(function(k){return w.states[k]+" "+k}).join(", ")+")":"")));
@@ -344,6 +354,7 @@ function legend(){var dl=$("legend");
 [ICON.heart,"Hearts (only when a tool limit is configured) = tool budget: 5 hearts is the tool-call limit; one is lost per fifth used."],[ICON.coin,"Gold = input-equivalent tokens (input 1, cache write 1.25, cache read 0.1, output 5). $ = API list price of the same tokens."],
 [HERO.executor,"Map view: a room's look follows the hero's class: armory knight, library rogue, lab sage, study bard, sand pit barbarian, vault treasure run, crypt for the rest. A room burns brighter while its hero is questing; green light = the run failed or the hero went berserk. A new hero walks in from the room of whoever sent it; one carrying a key continues a handoff and walks in from the room that handed off. REPLAY plays the session back on the map; drag the slider to see any moment."],
 [ICON.hourglass,"Timeline view: one bar per agent on a shared clock, rows in party-tree order; a striped bar is still running, a key or skull after a bar is a handoff or an issue. Zoom with + and -."],
+[ICON.crown,"Boss = the costliest hero of a party of 3 or more: a BOSS chip, and on the map a 3x red dragon wearing a crown and a red room light while it fights. Elite = costs at least half as much as the boss: an ELITE chip and a double-size enemy. Rank follows cost, so it can change while a session runs; the map layout never does."],
 [ICON.key,"Key = a handoff: TO #6 on the one that stopped, FROM #4 on the one that continues. KEY DROPPED = nobody continued."],
 [ICON.skull,"Skull chips are issues; grey chips are info. Name colour = model family that ran; 'x?/y?' = requested, not seen running yet."]]
 .forEach(function(x){var t=el("dt");t.append(spr(x[0],2));dl.append(t,el("dd",null,x[1]))})}
@@ -418,9 +429,26 @@ Lobby.settle(d,Date.now()/1000);
 if(cur&&cur.id===d.id&&cur.now===d.now&&cur.status===d.status&&!d.prun&&!d.agents.some(function(a){return a.running}))return;  /* same build, nothing ticking */
 render(d)};
 window.TLP=function(p){if(p&&cur&&p.id===cur.id&&p.prompts){PR=p.prompts;RP=p.replies||{};if(sel)fill()}};
+/* ---- achievements: achievements.js (the save file, shared by every session) -> trophy room, this session's badges, a toast for what is new */
+var ACH=null,SEEN=Trophy.parseSeen(lsGet("tlSeen")),toastT=0;
+window.TLA=function(a){if(!a||typeof a!=="object")return;ACH=a;if(INDEX)drawTrophy();else drawBadges();toastNew()};
+function drawTrophy(){var c=Trophy.count(ACH),t=Trophy.totals(ACH),st=el("div","stats"),ul=$("tlist");$("trophy").hidden=!c.all;  /* no save file yet (or an empty one): no box */
+$("tsum").textContent="TROPHY ROOM "+c.got+"/"+c.all;$("tsum").setAttribute("aria-label","Trophy room, "+c.got+" of "+c.all+" achievements unlocked");
+st.append(stat(HERO.executor,t.heroes.toLocaleString(),"heroes, all time","Subagents spawned in every session so far, including the ones past the 30-day purge"),stat(ICON.key,t.sessions.toLocaleString(),"sessions","Sessions seen so far"),
+stat(ICON.coin,usd(t.usd),"total","API list price of every session so far"),stat(ICON.hourglass,t.streak+"D","best streak","Most days in a row with a session"));
+$("ttot").replaceChildren(st);
+ul.replaceChildren.apply(ul,Trophy.rows(ACH).map(function(r){var li=el("li",r.got?"got":""),b=el("span"),d=r.got&&r.t?new Date(r.t*1000).toLocaleDateString():"";
+li.append(spr(ICON.trophy,2));b.append(el("b",null,r.name),el("span","mut",r.got?(d?"UNLOCKED "+d+" · ":"")+r.desc:"LOCKED · "+r.desc));li.append(b);
+li.setAttribute("aria-label",r.name+", "+(r.got?"unlocked"+(d?" "+d:""):"locked")+": "+r.desc);return li}))}
+function drawBadges(){var b=$("badges"),rs=cur?Trophy.pick(ACH,cur.badges):[];b.replaceChildren();rs.forEach(function(r){chip(b,"key",ICON.trophy,r.name.toUpperCase(),r.desc)});b.hidden=!rs.length}
+function toastNew(){var rs=Trophy.fresh(ACH,SEEN);if(!rs.length)return;SEEN=SEEN.concat(rs.map(function(r){return r.id}));lsSet(JSON.stringify(SEEN),"tlSeen");
+$("tt").textContent=Trophy.toast(rs);$("toast").hidden=false;clearTimeout(toastT);toastT=setTimeout(hideToast,6000)}
+function hideToast(){$("toast").hidden=true}
+$("tx").addEventListener("click",hideToast);document.addEventListener("keydown",function(e){if(e.key==="Escape")hideToast()});
 function loadPrompts(){if(prBusy||INDEX)return;prBusy=true;var sc=document.createElement("script");sc.src=SID+".prompts.js?t="+Date.now();
 sc.onload=sc.onerror=function(){prBusy=false;sc.remove()};document.head.appendChild(sc)}
-function poll(){var sc=document.createElement("script");sc.src=DATA+"?t="+Date.now();sc.onload=sc.onerror=function(){sc.remove()};document.head.appendChild(sc)}
+function ld(f){var sc=document.createElement("script");sc.src=f+"?t="+Date.now();sc.onload=sc.onerror=function(){sc.remove()};document.head.appendChild(sc)}
+function poll(){ld(DATA);ld("achievements.js")}
 setInterval(function(){if((live||cur&&cur.stale)&&document.visibilityState==="visible")poll()},3000);
 $("graph").addEventListener("click",function(e){var c=e.target.closest(".card");if(c)openPanel(c.dataset.id)});
 $("graph").addEventListener("keydown",function(e){var c=e.target.closest(".card");if(c&&(e.key==="Enter"||e.key===" ")){e.preventDefault();openPanel(c.dataset.id)}});
@@ -446,7 +474,7 @@ function span(d){return [d.t0,d.status==="live"?Math.max(d.now,Date.now()/1000):
 function mapNodes(d){var T=M.t,ags=T==null?d.agents:d.agents.filter(function(a){return a.start==null||a.start<=T});
 function on(a){return T==null||a.end==null?a.running:a.end>T}
 return [{id:"main",parent:null,running:ags.some(function(a){return on(a)&&a.kind!=="wf"})||(T==null&&d.prun),flags:[]}].concat(ags.map(function(a){
-return {id:a.id,parent:a.parent,cont:a.cont,tier:a.tier,kind:a.kind,running:on(a),flags:a.flags,wf:a.wf&&on(a)&&!a.running?{state:"running"}:a.wf}}))}
+return {id:a.id,parent:a.parent,cont:a.cont,tier:a.tier,kind:a.kind,rank:a.rank||null,running:on(a),flags:a.flags,wf:a.wf&&on(a)&&!a.running?{state:"running"}:a.wf}}))}
 function setPlay(b){M.play=b;$("rplay").textContent=b?"PAUSE":"REPLAY";$("rplay").setAttribute("aria-pressed",String(b))}
 function syncReplay(){if(!cur||cur.t0==null)return;var sp=span(cur),r=$("rt");r.min=Math.floor(sp[0]);r.max=Math.ceil(sp[1]);r.value=M.t==null?r.max:M.t;
 $("rl").textContent=M.t==null?(cur.status==="live"?"NOW":"END"):hms(M.t)+" · +"+fdur(M.t-sp[0])}
@@ -506,7 +534,7 @@ var q=M.d.rooms.filter(function(q){return x>=q.x&&x<q.x+q.w&&y>=q.y-1&&y<q.y+q.h
 $("map").addEventListener("click",function(e){var n=roomAt(e);if(n)openPanel(n.id)});
 $("map").addEventListener("mousemove",function(e){var n=roomAt(e),t=$("tip");this.style.cursor=n?"pointer":"default";if(!n){t.hidden=true;return}
 var mn=M.t!=null&&M.nodes.filter(function(x){return x.id===n.id})[0];  /* in a replay: the status at that moment */
-t.replaceChildren(el("b",null,name(n)+" · "+(mn?mn.running?"QUESTING":n.id==="main"?"RESTING":state(cur,n)[1]:state(cur,n)[1])),el("div",null,n.desc||"(no description)"));t.hidden=false;
+t.replaceChildren(el("b",null,name(n)+(n.rank?" · "+n.rank.toUpperCase():"")+" · "+(mn?mn.running?"QUESTING":n.id==="main"?"RESTING":state(cur,n)[1]:state(cur,n)[1])),el("div",null,n.desc||"(no description)"));t.hidden=false;
 t.style.left=Math.max(8,Math.min(e.clientX+14,innerWidth-t.offsetWidth-8))+"px";t.style.top=(e.clientY+18+t.offsetHeight>innerHeight?e.clientY-t.offsetHeight-10:e.clientY+18)+"px"});
 $("map").addEventListener("mouseleave",function(){$("tip").hidden=true});
 $("vchart").addEventListener("click",function(){setView("chart")});$("vmap").addEventListener("click",function(){setView("map")});$("vtime").addEventListener("click",function(){setView("time")});

@@ -18,6 +18,8 @@ var d = D.generate('s1', nodes), acts = A.place('s1', d, nodes), by = {};
 acts.forEach(function (a) { by[a.id] = a; });
 assert.deepStrictEqual(A.place('s1', d, nodes), acts, 'deterministic');
 assert.strictEqual(acts.length, nodes.length);
+assert(A.FOES.indexOf(A.BOSS) < 0, 'the boss dragon is not one of the ordinary foes');
+assert(A.DRAGON.length === 24 && A.DRAGON.every(function (r) { return r.length === 24 && /^[.orRlyYhewWt]+$/.test(r) && r.replace(/\./g, '').split('').every(function (c) { return A.DRAGON_PAL[c]; }); }), 'the dragon is 24x24 dots, every dot a palette colour');
 
 var solid = {}, pathc = {}, room = {};
 d.deco.forEach(function (e) { if (e.solid) solid[e.x + ',' + e.y] = 1; });
@@ -27,7 +29,7 @@ function ok(q, x, y) { return x >= q.x && x < q.x + q.w && y >= q.y && y < q.y +
 acts.forEach(function (a) {
   assert(ok(room[a.id], a.x, a.y), a.id + ' stands on a free floor cell of its own room');
   if (a.kind === 'hero') assert(ok(room[a.id], a.fx, a.fy) && a.fx === a.x + 1 && a.fy === a.y, a.id + ' enemy stands beside it');
-  if (a.kind === 'hero') assert(A.FOES.indexOf(a.foe) >= 0);
+  if (a.kind === 'hero') assert(A.FOES.indexOf(a.foe) >= 0 && a.fk === 1 && a.rank === null && a.ex === a.fx && a.ey === a.fy, 'an unranked hero keeps a small normal enemy');
 });
 
 // states and sprites, by the viewer's rules
@@ -115,3 +117,34 @@ A.stamp(n16, mem, 9100);
 assert.strictEqual(n16[0].state, 'win'); assert.strictEqual(n16[0].trip, by3.n16.trip, 'the walk in survives the state change');
 assert.strictEqual(n16[0].born, 9000); assert.strictEqual(by3.n1.born, -Infinity, 'a room seen on the first look was always there');
 console.log('ok (short job)');
+
+// rank: drawing only. An elite's enemy is 2x, the boss's a 3x dragon; the room, the hero and every other field stay as they were
+var ranked = nodes.map(function (n, i) { return i === 3 ? Object.assign({}, n, { rank: 'boss' }) : i === 6 || i === 9 ? Object.assign({}, n, { rank: 'elite' }) : n; });
+var dr = D.generate('s1', ranked), accts = A.place('s1', dr, ranked), byr = {}, base = {};
+A.place('s1', d, nodes).forEach(function (a) { base[a.id] = a; });
+assert.deepStrictEqual(dr, D.generate('s1', nodes), 'rank never changes the dungeon layout');
+accts.forEach(function (a) { byr[a.id] = a; });
+assert(byr.n3.rank === 'boss' && byr.n3.fk === 3 && byr.n3.foe === A.BOSS, 'boss: a 3x dragon');
+assert(byr.n6.rank === 'elite' && byr.n6.fk === 2 && byr.n6.foe === base.n6.foe, 'elite: the same foe at 2x');
+assert(byr.n1.rank === null && byr.n1.fk === 1 && byr.main.rank === undefined);
+accts.forEach(function (a) {
+  var u = base[a.id];
+  ['id', 'kind', 'idx', 'x', 'y', 'state', 'fx', 'fy', 'failed', 'from', 'key'].forEach(function (k) { assert.deepStrictEqual(a[k], u[k], a.id + ' ' + k + ' does not depend on rank'); });
+  if (a.kind !== 'hero') return;
+  var q = room[a.id];
+  assert(a.ex >= q.x && a.ey >= q.y && a.ex + a.fk <= q.x + q.w && a.ey + a.fk <= q.y + q.h, a.id + ' enemy box stays inside its room');
+  assert(!(a.x >= a.ex && a.x < a.ex + a.fk && a.y >= a.ey && a.y < a.ey + a.fk), a.id + ' the hero is not inside the enemy box');
+  for (var i = 0; i < a.fk; i++) for (var j = 0; j < a.fk; j++) assert(!a.free[(a.ex + i) + ',' + (a.ey + j)], a.id + ' nobody walks onto the enemy');
+});
+// every room size and seed: the biggest enemy still fits and never overlaps its hero
+for (var sd = 0; sd < 40; sd++) {
+  var big = [{ id: 'main', running: false }], bi;
+  for (bi = 1; bi < 14; bi++) big.push({ id: 'b' + bi, parent: 'main', tier: 'executor', running: bi % 2 === 0, flags: [], rank: bi % 3 ? 'boss' : 'elite' });
+  var db = D.generate('seed' + sd, big);
+  A.place('seed' + sd, db, big).forEach(function (a) {
+    if (a.kind !== 'hero') return;
+    var q = db.rooms.filter(function (r) { return r.id === a.id; })[0];
+    assert(a.ex >= q.x && a.ey >= q.y && a.ex + a.fk <= q.x + q.w && a.ey + a.fk <= q.y + q.h && !(a.x >= a.ex && a.x < a.ex + a.fk && a.y >= a.ey && a.y < a.ey + a.fk), 'seed ' + sd + ' ' + a.id + ' (' + q.w + 'x' + q.h + ')');
+  });
+}
+console.log('ok (rank)');

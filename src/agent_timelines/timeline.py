@@ -1,7 +1,7 @@
 """Turn one Claude Code session (main transcript, subagent transcripts, Workflow runs) into the data the viewer draws,
 and write it as <out_dir>/<sid>.data.js next to the shared index.html and index.data.js (live sessions only)."""
-import filecmp, glob, json, os, re, shutil, sys, tempfile, time
-from datetime import datetime, timezone
+import fcntl, filecmp, glob, json, os, re, shutil, sys, tempfile, time
+from datetime import date, datetime, timezone
 
 CLAUDE_DIR = os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
 PROJECTS = os.path.join(CLAUDE_DIR, "projects")
@@ -50,7 +50,7 @@ PRICE_COLS = ("in", "cc5", "cc1", "cr", "out", "over")
 FAST_MULT = 2  # usage.speed == "fast": every price column doubles
 STALE = 600  # s: an unfinished agent whose transcript is idle this long is dead, not running
 LIVE_AGE = 3600  # s: a session with no activity this long is ended
-ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js", "lobby.js", "gantt.js", "sky.js")  # sprites + font (assets/LICENSES.txt) + view scripts
+ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js", "lobby.js", "gantt.js", "sky.js", "trophy.js")  # sprites + font (assets/LICENSES.txt) + view scripts
 CONFIG = os.path.expanduser(os.environ.get("AGENT_TIMELINES_CONFIG") or "~/.config/agent-timelines/config.json")
 KEYS = {"out_dir": "OUT_DIR", "agents_dir": "AGENTS_DIR", "handover_dir": "HANDOVER_DIR", "tiers": "TIERS", "guard_text": "DENY",
         "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS", "lobby_limit": "LOBBY_LIMIT",
@@ -318,7 +318,7 @@ def agent(aid, m, s, first, wf, age, inp, now, closed, ended):
             "desc": m.get("description") or inp.get("description") or "", "req": "%s/%s" % (model or "-", effort or "-"),
             "ran": ran(model, effort, actual, actual_effort), "fam": family(actual or model), "running": running,
             "start": s["t0"] or (now if running else None), "end": now if running else s["t1"], "tools": s["tools"],
-            "tokens": weighted(tok), "tok": tok, "usd": round(s["usd"], 6), "unpriced": bool(s["unpriced"]), "toolsBy": tools_by(s["tool_names"]), "reply": reply, "replyLen": len(reply), "peak": s["peak"], "brief": len(prompt), "flags": flags, "handoff": handoff, "cont": None,
+            "tokens": weighted(tok), "tok": tok, "usd": round(s["usd"], 6), "unpriced": bool(s["unpriced"]), "toolsBy": tools_by(s["tool_names"]), "reply": reply, "replyLen": len(reply), "peak": s["peak"], "brief": len(prompt), "flags": flags, "handoff": handoff, "cont": None, "rank": None,
             "limit": limit[1] if limit else None, "exempt": exempt, "prompt": prompt, "phase": str(m.get("workflowPhase") or "")[:40] if wf else "",
             "_s": s, "_age": age, "_limit_t": limit[0] if limit else None, "_owner": m.get("toolUseId")}
 
@@ -416,6 +416,11 @@ def load(path, now=None, closed=(), ended=False, event=None):
     nodes.sort(key=lambda a: a["start"] or 0)
     for i, a in enumerate(nodes, 1):
         a["n"] = i  # spawn order: the #n on cards and in the feed
+    heroes = [a for a in nodes if a.get("kind") != "wf"]  # rank: the costliest hero of a party of 3+ is its boss (ties: earliest spawn), a hero at half its cost an elite
+    boss = max(heroes, key=lambda a: (a["usd"], -a["n"]), default=None)
+    boss = boss if boss and len(heroes) >= 3 and boss["usd"] > 0 else None
+    for a in heroes:
+        a["rank"] = "boss" if a is boss else "elite" if boss and a["usd"] >= boss["usd"] / 2 else None
     by = {a["id"]: a for a in nodes}
     who = lambda pid: "planner" if pid == "main" else "#%d" % by[pid]["n"] if pid in by else "?"
     events = [{"t": t or now, "k": "guard", "text": "guard block: the main session tried to execute"} for t in main["denials"]]
@@ -556,16 +561,139 @@ def closed_ids(out_dir, sid, event=None, aid=None):
     return ids
 
 
-def publish(d, out_dir=None, closed=()):
-    """Write <sid>.data.js (prompts emptied, replies cut to a teaser) and <sid>.prompts.js (the prompts and full replies), rebuild the index, drop expired sessions; returns the session's page."""
+# ---- achievements: <out_dir>/achievements.js, TLA({...}); one save file for every session, never purged
+
+SAVE = "achievements.js"
+# (id, name, description, predicate(s, t), lifetime). s = facts of one settled session (see facts()), t = lifetime totals (see totals()).
+# Session rules read s, lifetime rules (last column True) read t. Adding an achievement is adding a line.
+ACHIEVEMENTS = [
+    ("first", "First Blood", "A hero finished its job", lambda s, t: s["done"], False),
+    ("party5", "Full Party", "5 or more heroes in one session", lambda s, t: s["n"] >= 5, False),
+    ("legion", "Legion", "15 or more heroes in one session", lambda s, t: s["n"] >= 15, False),
+    ("flawless", "Flawless", "5 or more heroes and no issue flags", lambda s, t: s["n"] >= 5 and s["issues"] == 0, False),
+    ("penny", "Penny Pincher", "5 or more heroes for under $1 (every model priced)", lambda s, t: s["n"] >= 5 and s["priced"] and s["usd"] < 1, False),
+    ("hoard", "Dragon's Hoard", "A session over $50", lambda s, t: s["usd"] > 50, False),
+    ("slayer", "Boss Slayer", "The boss finished with no issue flags and no handoff", lambda s, t: s["slain"], False),
+    ("relay", "Relay", "A handoff was picked up and continued", lambda s, t: s["conts"] >= 1, False),
+    ("keys", "Key Master", "3 or more continued handoffs in one session", lambda s, t: s["conts"] >= 3, False),
+    ("treasure", "Treasure Hunter", "A Workflow run finished", lambda s, t: s["treasure"], False),
+    ("assemble", "Assemble", "4 or more classes in one session", lambda s, t: s["classes"] >= 4, False),
+    ("speedrun", "Speedrun", "A hero finished in under 30 s", lambda s, t: s["quick"], False),
+    ("swarm", "Swarm", "5 or more heroes running at once", lambda s, t: s["swarm"] >= 5, False),
+    ("haunted", "Haunted", "A hero went berserk (needs tool_limit)", lambda s, t: s["berserk"], False),
+    ("heroes100", "Centurion", "100 heroes sent out", lambda s, t: t["heroes"] >= 100, True),
+    ("heroes1000", "Thousand Blades", "1000 heroes sent out", lambda s, t: t["heroes"] >= 1000, True),
+    ("sessions100", "Veteran", "100 sessions", lambda s, t: t["sessions"] >= 100, True),
+    ("usd1000", "Treasury", "$1000 of API-price spend", lambda s, t: t["usd"] >= 1000, True),
+    ("streak7", "Seven Days", "Active 7 days in a row", lambda s, t: t["streak"] >= 7, True),
+]
+
+
+def issue_flags(a):
+    return [f for f in a.get("flags") or [] if f not in INFO_FLAGS and not f.startswith("ctx-")]
+
+
+def facts(d):
+    """What the session rules look at, from one session's data dict."""
+    ags = d.get("agents") or []
+    hs = [a for a in ags if a.get("kind") != "wf"]
+    cost = d.get("cost") or {}
+    cur = swarm = 0
+    for _, step in sorted((t, k) for a in hs if a.get("start") is not None and a.get("end") is not None and a["end"] > a["start"]
+                          for t, k in ((a["start"], 1), (a["end"], -1))):  # an end sorts before a start at the same time: back to back is not at once
+        cur += step
+        swarm = max(swarm, cur)
+    return {"n": len(hs), "done": any(not a.get("running") for a in hs), "usd": cost.get("total") or d.get("usd") or 0, "priced": not cost.get("unpriced"),
+            "issues": summary(d, d["updated"])["issues"], "conts": sum(bool(a.get("cont")) for a in hs), "classes": len({a.get("tier") for a in hs}),
+            "slain": any(a.get("rank") == "boss" and not a.get("running") and not a.get("handoff") and not issue_flags(a) for a in hs),
+            "treasure": any(a.get("kind") == "wf" and (a.get("wf") or {}).get("state") == "done" for a in ags),
+            "quick": any(not a.get("running") and a.get("tools") and a.get("start") is not None and a.get("end") is not None and 0 <= a["end"] - a["start"] < 30 for a in hs),
+            "swarm": swarm, "berserk": any("ignored-limit" in (a.get("flags") or []) for a in hs)}
+
+
+def badges_of(d):
+    """Ids of the session achievements this session earns by itself: judged only once it is settled (main idle, no agent running)."""
+    if d.get("prun") or any(a.get("running") for a in d.get("agents") or []):
+        return []
+    s = facts(d)
+    return [i for i, _, _, pred, life in ACHIEVEMENTS if not life and pred(s, None)]
+
+
+def read_save(path):
+    """The save file as a dict with every field present; a missing or corrupt file (or field) starts fresh instead of raising."""
+    save = {"v": 1, "unlocked": {}, "sessions": {}, "folded": {"sessions": 0, "heroes": 0, "usd": 0.0}, "days": []}
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.loads(f.read().strip()[4:-2])
+    except (OSError, ValueError):
+        return save
+    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+    if not isinstance(raw, dict):
+        return save
+    if isinstance(raw.get("unlocked"), dict):
+        save["unlocked"] = {k: v for k, v in raw["unlocked"].items() if isinstance(v, dict) and num(v.get("t"))}
+    if isinstance(raw.get("sessions"), dict):
+        save["sessions"] = {k: v for k, v in raw["sessions"].items() if isinstance(v, dict) and all(num(v.get(f)) for f in ("updated", "usd", "heroes"))}
+    if isinstance(raw.get("folded"), dict):
+        save["folded"].update({k: raw["folded"][k] for k in save["folded"] if num(raw["folded"].get(k))})
+    if isinstance(raw.get("days"), list):
+        save["days"] = sorted({x for x in raw["days"] if isinstance(x, str) and re.match(r"^\d{4}-\d\d-\d\d$", x)})
+    return save
+
+
+def totals(save):
+    """Lifetime totals: the folded sessions (older than RETAIN_DAYS) plus the recorded ones; streak = the longest run of active days."""
+    recs, f = save["sessions"].values(), save["folded"]
+    ords = sorted({date.fromisoformat(x).toordinal() for x in save["days"]})
+    streak = run = 0
+    for i, o in enumerate(ords):
+        run = run + 1 if i and o == ords[i - 1] + 1 else 1
+        streak = max(streak, run)
+    return {"heroes": f["heroes"] + sum(r["heroes"] for r in recs), "sessions": f["sessions"] + len(save["sessions"]),
+            "usd": round(f["usd"] + sum(r["usd"] for r in recs), 6), "streak": streak}
+
+
+def save_achievements(out_dir, d, now):
+    """Fold one session into the save file (read-modify-write under a lock: builds of different sessions run at the same time) and
+    return the session's own badge ids. The session's record is overwritten on every rebuild, so a rebuild never counts it twice.
+    shortcut: a session record is dropped into the lifetime totals once it is RETAIN_DAYS old, and one resumed after that is counted
+    again (its old part once more); a session that spans days marks only its first and last day as active. Upgrade to per-day records if it matters."""
+    badges, path = badges_of(d), os.path.join(out_dir, SAVE)
+    with open(os.path.join(out_dir, ".achievements.lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        save, cut, upd = read_save(path), now - RETAIN_DAYS * 86400, min(d["updated"], now)
+        if d["updated"] >= cut:  # never entered when already older than the retention: a rebuild of old transcripts cannot add them
+            save["sessions"][d["id"]] = {"updated": d["updated"], "usd": facts(d)["usd"], "heroes": sum(a.get("kind") != "wf" for a in d.get("agents") or [])}
+        for sid in [k for k, r in save["sessions"].items() if r["updated"] < cut]:
+            r = save["sessions"].pop(sid)
+            save["folded"] = {"sessions": save["folded"]["sessions"] + 1, "heroes": save["folded"]["heroes"] + r["heroes"], "usd": save["folded"]["usd"] + r["usd"]}
+        save["days"] = sorted(set(save["days"]) | {datetime.fromtimestamp(t).strftime("%Y-%m-%d") for t in (d.get("t0"), d["updated"]) if t})
+        t = totals(save)
+        for i, _, _, pred, life in ACHIEVEMENTS:
+            if i in badges or life and pred(None, t):
+                if i not in save["unlocked"] or upd < save["unlocked"][i]["t"]:  # the first unlock wins: the earliest session, since a rebuild goes newest first
+                    save["unlocked"][i] = {"t": upd, "sid": d["id"]}
+        save["list"] = [[i, n, ds] for i, n, ds, _, _ in ACHIEVEMENTS]  # the viewer shows names and conditions from here, so a new rule needs no viewer change
+        save["totals"] = t
+        write_atomic(path, "TLA(%s);\n" % js(save))
+    return badges
+
+
+def publish(d, out_dir=None, closed=(), now=None):
+    """Write <sid>.data.js (prompts emptied, replies cut to a teaser, "badges" = its own achievement ids) and <sid>.prompts.js (the prompts and full replies),
+    update achievements.js, rebuild the index, drop expired sessions; returns the session's page."""
     out_dir = out_dir or OUT_DIR
     os.makedirs(out_dir, exist_ok=True)
+    try:
+        badges = save_achievements(out_dir, d, now or time.time())
+    except Exception:  # the hook must never fail over a trophy
+        badges = []
     prompts = {a["id"]: a["prompt"] for a in d["agents"] if a.get("prompt")}
     replies = {a["id"]: a["reply"] for a in d["agents"] if a.get("reply")}
     if d.get("reply"):
         replies["main"] = d["reply"]
     short = lambda t: " ".join((t or "").split())[:160]  # the data file carries a one-line teaser; replyLen keeps the real length
-    slim = dict(d, reply=short(d.get("reply")), agents=[dict(a, prompt="", reply=short(a.get("reply"))) for a in d["agents"]], closed=sorted(closed))
+    slim = dict(d, reply=short(d.get("reply")), agents=[dict(a, prompt="", reply=short(a.get("reply"))) for a in d["agents"]], closed=sorted(closed), badges=badges)
     # prompts first: the data file must never point at prompts that are not on disk yet
     write_atomic(os.path.join(out_dir, d["id"] + ".prompts.js"), "TLP(%s);\n" % js({"id": d["id"], "prompts": prompts, "replies": replies}))
     write_atomic(os.path.join(out_dir, d["id"] + ".data.js"), "TL(%s);\n" % js(slim))

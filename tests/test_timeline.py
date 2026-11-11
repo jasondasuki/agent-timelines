@@ -1,5 +1,5 @@
 """python3 tests/test_timeline.py (or pytest). Builds fake transcripts in a temp dir; never reads your real ~/.claude."""
-import copy, json, os, sys, tempfile
+import copy, json, os, sys, tempfile, threading, time
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -16,7 +16,7 @@ fin = lambda i, sec, model="claude-sonnet-5", effort="high": {"type": "assistant
 meta = lambda tid, **k: dict({"agentType": "general-purpose", "toolUseId": tid, "description": "d"}, **k)
 spawn = lambda tid, typ, sec, **k: use(tid, "Agent", dict({"subagent_type": typ}, **k), sec)
 FULL = {"model": "opus", "effort": "high"}
-unwrap = lambda p: json.loads(open(p).read().strip()[3:-2])
+unwrap = lambda p: json.loads((lambda t: t[t.index("(") + 1:-2])(open(p).read().strip()))
 by = lambda d: {a["id"]: a for a in d["agents"]}
 
 
@@ -100,7 +100,7 @@ def test_tree_flags_running_and_files():
     assert pj["prompts"] == {"B": b["B"]["prompt"]} and "Continue from the handoff" in pj["prompts"]["B"]
     assert "Continue from the handoff" not in raw and all(a["prompt"] == "" for a in jd["agents"]) and by(jd)["B"]["brief"] == len(b["B"]["prompt"])
     html = open(os.path.join(od, "index.html")).read()
-    assert "innerHTML" not in html and "index.data.js" in html and 'src="lobby.js"' in html and 'src="gantt.js"' in html and 'src="sky.js"' in html and {"lobby.js", "gantt.js", "sky.js"} <= set(tl.ASSETS)
+    assert "innerHTML" not in html and "index.data.js" in html and 'src="lobby.js"' in html and 'src="gantt.js"' in html and 'src="sky.js"' in html and {"lobby.js", "gantt.js", "sky.js", "trophy.js"} <= set(tl.ASSETS) and 'src="trophy.js"' in html
     assert "prompts.js" in html and "TLP" in html and "replies" in pj and pj["replies"]["B"] == "done" and pj["replies"]["A"] == "HANDOFF /h/x.md"
     # a long multi-line final reply: teaser in the data file, full text in the prompts file, neither can close a script tag
     longr = "line one\n</script><b>x</b>\n" + "y" * 473
@@ -135,7 +135,7 @@ def test_tree_flags_running_and_files():
         os.utime(os.path.join(od, f), (1, 1))
     os.utime(os.path.join(od, "liveB.data.js"), (1, 1))
     tl.purge(od, "liveB", now)
-    assert sorted(os.listdir(od)) == sorted(tl.ASSETS + ("bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "sess1.prompts.js", "staleC.data.js", "oldD.data.js"))
+    assert sorted(os.listdir(od)) == sorted(tl.ASSETS + (".achievements.lock", "achievements.js", "bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "sess1.prompts.js", "staleC.data.js", "oldD.data.js"))
     # SubagentHandback ends an agent; a later assistant line resumes it; SubagentStop/Start keep the closed list
     hb = [use("g1", "Read", {}, 10), use("hb1", "SubagentHandback", {"message": "x"}, 20),
           {"type": "user", "timestamp": T(21), "message": {"content": [{"type": "tool_result", "tool_use_id": "hb1", "content": "Report delivered."}]}}]
@@ -336,7 +336,185 @@ def test_rules_and_config():
         pass
 
 
+# one hero's transcript: a single opus-5 turn of `mtok` million input tokens at second `sec` = $5 per million
+spend = lambda i, mtok, sec=10: {"type": "assistant", "timestamp": T(sec), "effort": "high", "message": {
+    "id": i, "stop_reason": "end_turn", "model": "claude-opus-5", "usage": {"input_tokens": int(mtok * 1e6)}, "content": [{"type": "text", "text": "done"}]}}
+
+
+def test_rank():
+    d = setup()
+    pd = os.path.join(d, "proj")
+    party = lambda sid, costs: tl.load(session(pd, sid, [spawn("s%d" % i, "general-purpose", i, **FULL) for i in range(len(costs))], [
+        ("H%d" % i, meta("s%d" % i), [spend("x%d" % i, c, 10 + i)]) for i, c in enumerate(costs)]))
+    rank = lambda s: [a["rank"] for a in s["agents"]]
+    assert rank(party("r1", [2, 1, 0.8])) == ["boss", "elite", None], "elite from half the boss's cost up"
+    assert rank(party("r2", [1, 4, 2.0001])) == [None, "boss", "elite"] and rank(party("r3", [1, 1, 1])) == ["boss", "elite", "elite"], "ties: the earliest spawn is the boss"
+    assert rank(party("r4", [5, 1])) == [None, None], "fewer than 3 heroes: no boss, so no elite either"
+    assert rank(party("r5", [0, 0, 0])) == [None] * 3, "a boss must cost something"
+    assert rank(party("r6", [1.5, 1, 3, 0.5])) == ["elite", None, "boss", None]
+    assert all("rank" in a for a in party("r7", [1, 3, 1])["agents"])
+    # workflow nodes carry no rank and do not count as heroes
+    run = [use("w1", "Workflow", {}, 0), {"type": "user", "timestamp": T(1), "toolUseResult": {"taskType": "local_workflow", "workflowName": "n", "runId": "wf_r-1"},
+                                          "message": {"content": [{"type": "tool_result", "tool_use_id": "w1", "content": "Workflow launched."}]}}]
+    wm = {"agentType": "general-purpose", "description": "w", "workflowPhase": "P"}
+    sw = tl.load(session(pd, "r8", run + [spawn("s0", "general-purpose", 2, **FULL), spawn("s1", "general-purpose", 3, **FULL)],
+                         [("H0", meta("s0"), [spend("a", 1)]), ("H1", meta("s1"), [spend("b", 2)])], ""))
+    assert [a.get("rank", "none") for a in sw["agents"] if a.get("kind") == "wf"] == ["none"] and [a["rank"] for a in sw["agents"] if a.get("kind") != "wf"] == [None, None]
+
+
+def hero(i=0, **k):
+    return dict({"id": "h%d" % i, "kind": None, "running": False, "tier": "executor", "flags": [], "tools": 3, "start": 100 * i, "end": 100 * i + 50, "cont": None,
+                 "handoff": None, "rank": None, "usd": 0.1}, **k)
+
+
+def sdata(agents, usd=1.0, **k):
+    return dict({"id": "x", "updated": 1e6, "t0": 1e6 - 500, "prun": False, "agents": agents, "cost": {"total": usd, "unpriced": []}}, **k)
+
+
+def test_achievement_rules():
+    ids = lambda d: set(tl.badges_of(d))
+    five = [hero(i) for i in range(5)]
+    assert len({a[0] for a in tl.ACHIEVEMENTS}) == len(tl.ACHIEVEMENTS) >= 16 and all(callable(a[3]) for a in tl.ACHIEVEMENTS)
+    assert ids(sdata([])) == set() and ids(sdata([hero()])) == {"first"}, "one finished hero: first blood only"
+    # settled only: a running hero, or the main session running, earns nothing yet
+    assert tl.badges_of(sdata([hero(), hero(1, running=True)])) == [] and tl.badges_of(sdata(five, prun=True)) == []
+    assert {"party5", "flawless", "penny"} <= ids(sdata(five, 0.5)) and "party5" not in ids(sdata(five[:4]))
+    assert "legion" in ids(sdata([hero(i) for i in range(15)])) and "legion" not in ids(sdata([hero(i) for i in range(14)]))
+    bad = five[:4] + [hero(4, flags=["no-model"])]
+    assert "flawless" not in ids(sdata(bad)) and "flawless" in ids(sdata(five[:4] + [hero(4, flags=["handoff", "ctx-200k", "tool-limit"])])), "info flags are not issues"
+    assert "flawless" not in ids(sdata(five[:4])), "5+ heroes"
+    assert "flawless" not in ids(sdata(five, guard=0, denials=1)), "a guard block is an issue"
+    assert "penny" not in ids(sdata(five, 2)) and "penny" not in ids(sdata(five, 0.5, cost={"total": 0.5, "unpriced": ["gpt"]})) and "penny" not in ids(sdata(five[:4], 0.5))
+    assert "hoard" in ids(sdata([hero()], 50.01)) and "hoard" not in ids(sdata([hero()], 50))
+    boss = lambda **k: [hero(0, rank="boss", **k), hero(1), hero(2)]
+    assert "slayer" in ids(sdata(boss())) and "slayer" not in ids(sdata(boss(flags=["no-model"]))) and "slayer" not in ids(sdata(boss(handoff="/h/x.md")))
+    assert "slayer" not in ids(sdata([hero(i) for i in range(3)])) and "slayer" not in ids(sdata(boss(running=True)))
+    cont = lambda n: [hero(i, cont="p%d" % i if i < n else None) for i in range(4)]
+    assert "relay" not in ids(sdata(cont(0))) and "relay" in ids(sdata(cont(1))) and "keys" not in ids(sdata(cont(2))) and "keys" in ids(sdata(cont(3)))
+    wf = lambda st: {"id": "wf_1", "kind": "wf", "running": False, "wf": {"state": st}, "start": 0, "end": 9, "flags": []}
+    assert "treasure" in ids(sdata([wf("done")])) and "treasure" not in ids(sdata([wf("failed")])) and "treasure" not in ids(sdata([wf("running")])), "a workflow is not a hero"
+    assert "first" not in ids(sdata([wf("done")])) and "party5" not in ids(sdata([wf("done")] * 5))
+    tiers = lambda *t: [hero(i, tier=x) for i, x in enumerate(t)]
+    assert "assemble" in ids(sdata(tiers("executor", "scanner", "plan", "writer"))) and "assemble" not in ids(sdata(tiers("executor", "scanner", "plan", "plan", "plan")))
+    assert "speedrun" in ids(sdata([hero(start=0, end=29.9)])) and "speedrun" not in ids(sdata([hero(start=0, end=30)])) and "speedrun" not in ids(sdata([hero(start=0, end=5, tools=0)]))
+    at_once = lambda n, gap=0: [hero(i, start=i * gap, end=100 + i * gap) for i in range(n)]
+    assert "swarm" in ids(sdata(at_once(5))) and "swarm" not in ids(sdata(at_once(4))) and "swarm" in ids(sdata(at_once(5, 10)))
+    assert "swarm" not in ids(sdata([hero(i, start=i * 10, end=i * 10 + 10) for i in range(5)])) and "swarm" not in ids(sdata(at_once(5, 100))), "back to back is not at once"
+    assert "haunted" in ids(sdata([hero(flags=["tool-limit", "ignored-limit"])])) and "haunted" not in ids(sdata([hero(flags=["tool-limit"])]))
+    # lifetime rules read the totals only
+    life = [a for a in tl.ACHIEVEMENTS if a[4]]
+    assert [a[0] for a in life] == ["heroes100", "heroes1000", "sessions100", "usd1000", "streak7"]
+    zero = {"heroes": 0, "sessions": 0, "usd": 0, "streak": 0}
+    assert not any(a[3](None, zero) for a in life)
+    for a, key, v in zip(life, ("heroes", "heroes", "sessions", "usd", "streak"), (100, 1000, 100, 1000, 7)):
+        assert a[3](None, dict(zero, **{key: v})) and not a[3](None, dict(zero, **{key: v - 1})), a[0]
+
+
+def test_save_file():
+    d = setup()
+    od, now = os.path.join(d, "out"), datetime(2026, 3, 1, 12).timestamp()
+    day = 86400
+    sd = lambda sid, age=0, **k: dict(sdata(k.pop("agents", [hero()]), k.pop("usd", 2.0), id=sid, updated=now - age * day, t0=now - age * day - 60), **k)
+    pub = lambda x: tl.publish(x, od, now=now)
+    save = lambda: tl.read_save(os.path.join(od, tl.SAVE))
+    # missing file: fresh. publish writes it as TLA({...}); and puts the session's own ids in its data
+    assert tl.read_save(os.path.join(od, tl.SAVE)) == {"v": 1, "unlocked": {}, "sessions": {}, "folded": {"sessions": 0, "heroes": 0, "usd": 0.0}, "days": []}
+    five = [hero(i) for i in range(5)]
+    pub(sd("s1", agents=five))
+    raw = open(os.path.join(od, tl.SAVE)).read()
+    sv = unwrap(os.path.join(od, tl.SAVE))
+    assert raw.startswith("TLA(") and raw.endswith(");\n") and "</" not in raw and sv["v"] == 1 and sv["totals"] == {"heroes": 5, "sessions": 1, "usd": 2.0, "streak": 1}
+    jd = unwrap(os.path.join(od, "s1.data.js"))
+    assert jd["badges"] == tl.badges_of(sd("s1", agents=five)) and "party5" in jd["badges"] and set(jd["badges"]) <= set(sv["unlocked"])
+    assert sv["unlocked"]["party5"] == {"t": now, "sid": "s1"} and [x[0] for x in sv["list"]] == [a[0] for a in tl.ACHIEVEMENTS] and all(len(x) == 3 for x in sv["list"])
+    # idempotent: the same session published again and again counts once; it grows, the totals follow (not add up)
+    for _ in range(3):
+        pub(sd("s1", agents=five))
+    assert save()["unlocked"] == sv["unlocked"] and tl.totals(save()) == {"heroes": 5, "sessions": 1, "usd": 2.0, "streak": 1}
+    pub(sd("s1", agents=five + [hero(5)], usd=3.0))
+    assert tl.totals(save()) == {"heroes": 6, "sessions": 1, "usd": 3.0, "streak": 1}
+    pub(sd("s2", 1, agents=[hero()], usd=1.5))
+    assert tl.totals(save()) == {"heroes": 7, "sessions": 2, "usd": 4.5, "streak": 2}, "a second session on the day before: a 2-day streak"
+    # first unlock wins: a later session never moves it; an earlier one (rebuilds go newest first) does
+    assert save()["unlocked"]["first"] == {"t": now - day, "sid": "s2"}, "s2 is the earlier session"
+    pub(sd("s0", 3, agents=[hero()]))
+    assert save()["unlocked"]["first"] == {"t": now - 3 * day, "sid": "s0"} and save()["unlocked"]["party5"]["sid"] == "s1"
+    pub(sd("s9", 0.5, agents=[hero()]))
+    assert save()["unlocked"]["first"]["sid"] == "s0", "a later session never moves it"
+    # an unsettled session counts in the totals but earns no session badge
+    pub(sd("live", 0, agents=[hero(running=True)] * 1, prun=True))
+    assert unwrap(os.path.join(od, "live.data.js"))["badges"] == [] and tl.totals(save())["sessions"] == 5
+    # retention: a record older than RETAIN_DAYS folds into the totals once; a session already that old is never entered
+    later = now + 31 * day
+    tl.publish(sd("n1", 0, agents=[hero()], updated=later), od, now=later)
+    t = tl.totals(save())
+    assert save()["folded"]["sessions"] == 5 and sorted(save()["sessions"]) == ["n1"], save()
+    assert (t["heroes"], t["sessions"], t["usd"]) == (11, 6, 12.5), "5 folded (6+1+1+1+1 heroes, $10.50) plus n1"
+    tl.publish(sd("s1", 31, agents=five + [hero(5)], usd=3.0), od, now=later)  # a rebuild of a transcript that old
+    assert tl.totals(save()) == t and "s1" not in save()["sessions"], "never entered, so never counted twice"
+    tl.publish(sd("n1", 0, agents=[hero()], updated=later), od, now=later)
+    assert tl.totals(save()) == t
+    # lifetime rules: 7 days in a row
+    for i in range(7):
+        tl.publish(sd("k%d" % i, 20 + i, agents=[hero()]), od, now=now)
+    assert "streak7" in save()["unlocked"] and tl.totals(save())["streak"] >= 7
+    # a session that is 100 heroes, 1000 heroes, $1000, 100 sessions on its own or together
+    tl.publish(sd("big", 0, agents=[hero(i) for i in range(1000)], usd=1000), od, now=now)
+    assert {"heroes100", "heroes1000", "usd1000", "hoard", "legion"} <= set(save()["unlocked"]) and "sessions100" not in save()["unlocked"]
+    for i in range(100):
+        tl.save_achievements(od, sd("m%d" % i, 5, agents=[hero()]), now)
+    assert "sessions100" in save()["unlocked"]
+
+
+def test_save_file_corrupt_and_files():
+    d = setup()
+    od, now = os.path.join(d, "out"), datetime(2026, 3, 1, 12).timestamp()
+    os.makedirs(od)
+    path = os.path.join(od, tl.SAVE)
+    x = lambda sid: dict(sdata([hero()], 1.0, id=sid, updated=now, t0=now - 9), ctxLimit=1)
+    fresh = lambda: tl.read_save(path)
+    # corrupt or wrong-typed files start fresh without raising; the next publish rewrites a good one
+    for junk in (b"TLA({not json", b"", b"\xff\xfe\x00", b"TLA([1,2]);", b'TLA({"unlocked": 5, "sessions": [1], "folded": "x", "days": ["nope", 3]});', b"TLA(null);"):
+        open(path, "wb").write(junk)
+        assert fresh() == tl.read_save(os.path.join(d, "missing")), junk
+        tl.publish(x("a"), od, now=now)
+        assert tl.totals(fresh()) == {"heroes": 1, "sessions": 1, "usd": 1.0, "streak": 1} and "first" in fresh()["unlocked"], junk
+    # a field that is fine survives a field that is not
+    open(path, "w").write('TLA({"unlocked": {"first": {"t": 5, "sid": "q"}, "bad": 3}, "sessions": {"z": {"updated": 5}}});')
+    assert fresh()["unlocked"] == {"first": {"t": 5, "sid": "q"}} and fresh()["sessions"] == {}
+    # the hook never fails: an unwritable save file loses the trophy, not the session
+    os.remove(path)
+    os.mkdir(path)
+    tl.publish(x("b"), od, now=now)
+    assert os.path.exists(os.path.join(od, "b.data.js")) and unwrap(os.path.join(od, "b.data.js"))["badges"] == []
+    os.rmdir(path)
+    # purge never touches the save file or its lock, however old; build_index does not read it as a session
+    tl.publish(x("c"), od, now=now)
+    for f in (tl.SAVE, ".achievements.lock", "c.data.js"):
+        os.utime(os.path.join(od, f), (1, 1))
+    tl.purge(od, "other", now + 90 * 86400)
+    left = set(os.listdir(od))
+    assert {tl.SAVE, ".achievements.lock"} <= left and "c.data.js" not in left
+    tl.build_index(od, now)
+    assert {r["id"] for r in unwrap(os.path.join(od, "index.data.js"))["sessions"]} == {"a", "b"} and tl.SAVE not in tl.ASSETS
+    # concurrent publishes of different sessions: no lost update
+    keep = tl.read_save
+
+    def slow(p):
+        r = keep(p)
+        time.sleep(0.02)
+        return r
+    tl.read_save = slow
+    try:
+        ts = [threading.Thread(target=tl.publish, args=(x("t%d" % i), od), kwargs={"now": now}) for i in range(8)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+    finally:
+        tl.read_save = keep
+    assert {"t%d" % i for i in range(8)} <= set(keep(path)["sessions"]), sorted(keep(path)["sessions"])
+
+
 if __name__ == "__main__":
-    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running, test_lobby_limit, test_cost, test_rules_and_config):
+    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running, test_lobby_limit, test_cost, test_rules_and_config, test_rank, test_achievement_rules, test_save_file, test_save_file_corrupt_and_files):
         t()
     print("ok")
