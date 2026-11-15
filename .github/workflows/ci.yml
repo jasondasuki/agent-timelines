@@ -7,7 +7,8 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    # ubuntu-latest (26.04) has no Python 3.9 build, so that one job runs on 24.04; the job name, a required check, stays the same
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.9' && 'ubuntu-24.04' || matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
