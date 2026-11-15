@@ -1,5 +1,5 @@
 """agent-timelines: install the Claude Code hooks, build session data, serve the dashboard."""
-import argparse, fcntl, functools, glob, http.server, json, os, shlex, shutil, subprocess, sys, tempfile, time, urllib.parse, webbrowser
+import argparse, fcntl, functools, glob, http.server, json, os, shlex, shutil, subprocess, sys, time, urllib.parse, webbrowser
 from datetime import datetime
 
 from . import timeline as tl
@@ -25,13 +25,16 @@ def strip(hooks):
 
 
 def edit_settings(path, edit):
-    path = os.path.expanduser(path or os.path.join(tl.CLAUDE_DIR, "settings.json"))
+    # realpath: a profile whose settings.json is a symlink keeps the link, the edit lands in the file it points at
+    path = os.path.realpath(os.path.expanduser(path or os.path.join(tl.CLAUDE_DIR, "settings.json")))
+    mode = None
     try:
         with open(path, encoding="utf-8") as f:
             cfg = json.load(f)
         bak = "%s.bak-agent-timelines-%s" % (path, time.strftime("%Y%m%d-%H%M%S"))
         shutil.copy2(path, bak)
         print("backup:", bak)
+        mode = os.stat(path).st_mode & 0o777
     except FileNotFoundError:
         cfg = {}
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -39,6 +42,8 @@ def edit_settings(path, edit):
     if not cfg["hooks"]:
         del cfg["hooks"]
     tl.write_atomic(path, json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
+    if mode is not None:
+        os.chmod(path, mode)  # write_atomic leaves 0600; the file keeps the mode it had
     return path
 
 
@@ -84,7 +89,9 @@ def build(a):
     tp = a.transcript.split("/subagents/")[0] + ".jsonl" if "/subagents/" in a.transcript else a.transcript  # subagent events may name their own file
     sid = os.path.basename(tp)[:-6]
     # one build per session at a time: two agents stopping together would each rewrite the closed list without the other's id
-    with open(os.path.join(tempfile.gettempdir(), "agent-timeline-%s.lock" % sid), "w") as lock:
+    # the lock and the recheck mark live in OUT_DIR (ours, and purge removes old ones), not in a temp dir other users can write to
+    os.makedirs(tl.OUT_DIR, exist_ok=True)
+    with open(os.path.join(tl.OUT_DIR, ".%s.lock" % sid), "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         closed = tl.closed_ids(tl.OUT_DIR, sid, a.event, a.closed)
         d = tl.load(tp, closed=closed, ended=a.event == "SessionEnd", event=a.event)
@@ -92,7 +99,7 @@ def build(a):
     # No hook fires when a Workflow ends, so while one looks live this re-runs itself every 20s.
     # shortcut: gives up after 30 re-runs (10 min); upgrade if Claude Code adds a workflow-end hook event.
     if a.event and a.recheck < 30 and any(n.get("kind") == "wf" and n["running"] for n in d["agents"]):
-        mark = os.path.join(tempfile.gettempdir(), "agent-timeline-%s.recheck" % sid)
+        mark = os.path.join(tl.OUT_DIR, ".%s.recheck" % sid)
         if a.recheck or not os.path.exists(mark) or time.time() - os.path.getmtime(mark) >= 25:  # else another chain is polling
             open(mark, "w").close()
             detach("sh", "-c", 'sleep 20; exec "$@"', "sh", sys.executable, "-m", "agent_timelines", "build", tp, "--event", "Recheck",
