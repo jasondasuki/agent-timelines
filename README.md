@@ -35,6 +35,10 @@ session works. Everything is read from your local transcripts; nothing leaves yo
   - A new hero walks the corridors to its room, carrying a key if it continues a handoff.
   - Hover a room for its agent, click it for details.
   - REPLAY plays the whole session back on the map; drag the slider to see any moment.
+  - WALK lets you steer the guild master yourself: arrow keys or WASD, one cell at a time, Esc (or the button) to stop. Walls, props, enemies,
+    chests and fighting heroes block the way. Walking into a room, or up to its door when the enemy stands right behind it, opens that agent's
+    details; walking out closes them. The pentagram is only cast while standing still. Turning coins lie about to pick up: they are for fun,
+    remembered in this browser only, and earn no XP.
 
 ![Lobby: the cost ledger, live dungeons and the hall of records under a night sky](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/lobby.jpg)
 ![Map view: the guild hall and themed rooms by torchlight, with the replay slider](https://raw.githubusercontent.com/jasondasuki/agent-timelines/main/docs/map.jpg)
