@@ -148,3 +148,94 @@ for (var sd = 0; sd < 40; sd++) {
   });
 }
 console.log('ok (rank)');
+
+// ---- walk mode: the player steers the guild master. Whatever keys are pressed, it never stands on or steps to a cell it may not enter.
+var DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]], BAD = [[1, 1], [-1, 1], [0, 0], [2, 0], [0, -2], null];
+function reach(g, from) { // every cell of g reachable from `from` in 4 directions
+  var seen = {}, q = [from], c, i, n; seen[from + ''] = 1;
+  while (q.length) { c = q.shift(); for (i = 0; i < 4; i++) { n = [c[0] + DIRS[i][0], c[1] + DIRS[i][1]]; if (g[n + ''] && !seen[n + '']) { seen[n + ''] = 1; q.push(n); } } }
+  return seen;
+}
+var steps = 0, moved = 0, bumps = 0, coinsAll = 0, rooms = 0, inside = 0;
+for (var ws = 0; ws < 30; ws++) {
+  var party = [{ id: 'main', parent: null, running: ws % 2 === 0, flags: [] }], wi, wn = 3 + ws % 14;
+  for (wi = 1; wi <= wn; wi++) party.push({ id: 'w' + wi, parent: party[(wi * 5 + ws) % wi].id, tier: tiers[(wi + ws) % tiers.length], running: (wi + ws) % 3 === 0, flags: [],
+    rank: wi === 1 + ws % wn ? 'boss' : wi % 4 === 0 ? 'elite' : null });
+  if (wn > 4) { party[3].kind = 'wf'; party[3].rank = null; party[3].wf = { state: ws % 2 ? 'done' : 'running' }; party[3].running = ws % 2 === 0; }
+  var wd = D.generate('walk' + ws, party), wa = A.place('walk' + ws, wd, party), wg = A.ground(wd, wa), gm = wa[0], fl = {}, wsolid = {};
+  wd.deco.forEach(function (e) { if (e.solid) wsolid[e.x + ',' + e.y] = 1; });
+  // the rule, worked out here on its own: a walkable tile, no solid prop, no enemy box, no chest, no fighting hero
+  wd.tiles.forEach(function (row, y) { row.forEach(function (t, x) { if (D.T.WALK.indexOf(t) >= 0 && !wsolid[(x + wd.ox) + ',' + (y + wd.oy)]) fl[(x + wd.ox) + ',' + (y + wd.oy)] = 1; }); });
+  wa.forEach(function (a) {
+    if (a.kind === 'wf' || a.kind === 'hero' && a.state === 'fight') delete fl[a.x + ',' + a.y];
+    if (a.kind === 'hero') for (var i = 0; i < a.fk; i++) for (var j = 0; j < a.fk; j++) delete fl[(a.ex + i) + ',' + (a.ey + j)];
+  });
+  assert.deepStrictEqual(wg, fl, 'seed ' + ws + ': ground() is the walkable rule');
+  assert(wg[gm.x + ',' + gm.y], 'the guild master starts on the ground');
+  var seen = reach(wg, [gm.x, gm.y]);
+  wd.rooms.forEach(function (q) { // every room can be visited from the hall: walked into, or at least its door reached when the enemy stands right behind it
+    var inq = Object.keys(seen).filter(function (k) { var rq = A.roomOf(wd, k.split(',').map(Number)); return rq && rq.id === q.id; });
+    assert(inq.length, 'seed ' + ws + ': room ' + q.id + ' (' + q.w + 'x' + q.h + ') is reachable from the hall'); rooms++;
+    if (inq.some(function (k) { var c = k.split(','); return +c[0] >= q.x && +c[0] < q.x + q.w && +c[1] >= q.y && +c[1] < q.y + q.h; })) inside++;
+  });
+  Object.keys(wg).forEach(function (k) { // roomOf: a floor cell is its room, a corridor is none, a door is the one room it opens into
+    var c = k.split(',').map(Number), rq = A.roomOf(wd, c), box = wd.rooms.filter(function (q) { return c[0] >= q.x && c[0] < q.x + q.w && c[1] >= q.y && c[1] < q.y + q.h; })[0];
+    if (box) assert.strictEqual(rq, box); else if (wd.tiles[c[1] - wd.oy][c[0] - wd.ox] !== D.T.DOOR) assert.strictEqual(rq, null); else assert(rq, 'door ' + k + ' opens into a room');
+  });
+  // thousands of random key presses at random frame times, bad directions among them
+  var r = D.prng('keys' + ws), pl = { at: [gm.x, gm.y], to: null, t0: 0, face: 1 }, now = 0, dir = null, ok = function (k) { return !!wg[k]; };
+  for (var st = 0; st < 4000; st++) {
+    now += 1 + r() * (r() < 0.05 ? 3000 : 120); // mostly frames, now and then a hidden tab
+    if (r() < 0.3) dir = r() < 0.08 ? BAD[r() * BAD.length | 0] : DIRS[r() * 4 | 0];
+    var was = pl.at.slice(), had = pl.to;
+    A.steer(pl, ok, dir, now); steps++;
+    assert(wg[pl.at + ''], 'seed ' + ws + ' step ' + st + ': stands on ' + pl.at + ', not walkable');
+    if (pl.to) {
+      assert(wg[pl.to + ''], 'seed ' + ws + ' step ' + st + ': steps to ' + pl.to + ', not walkable');
+      assert.strictEqual(Math.abs(pl.to[0] - pl.at[0]) + Math.abs(pl.to[1] - pl.at[1]), 1, 'one cell at a time, never a diagonal');
+    }
+    assert(Math.abs(pl.at[0] - was[0]) + Math.abs(pl.at[1] - was[1]) <= 1, 'at most one cell per call, however late the frame');
+    if (pl.at + '' !== was + '') { assert.deepStrictEqual(pl.at, had, 'it only arrives where it was heading'); moved++; }
+    var po = A.pose({ state: 'cast', pl: pl }, now, false), ps = A.pose({ state: 'cast', pl: pl }, now, true);
+    assert.strictEqual(po.cast, !pl.to, 'the spell is cast only while standing still'); assert.strictEqual(po.moving, !!pl.to);
+    assert(!ps.cast || !pl.to, 'reduced motion: no spell during a step either');
+    assert(po.x >= Math.min(pl.at[0], (pl.to || pl.at)[0]) && po.x <= Math.max(pl.at[0], (pl.to || pl.at)[0]) && po.y >= Math.min(pl.at[1], (pl.to || pl.at)[1]) && po.y <= Math.max(pl.at[1], (pl.to || pl.at)[1]), 'drawn between the two cells');
+    assert(!A.pose({ state: 'idle', pl: pl }, now, false).cast, 'no spell when no work is going on');
+  }
+  // every blocked neighbour of every ground cell refuses the step
+  Object.keys(wg).forEach(function (k) {
+    var c = k.split(',').map(Number);
+    DIRS.forEach(function (dv) {
+      var p2 = A.steer({ at: c.slice(), to: null, t0: 0, face: 1 }, ok, dv, 1000), n = [c[0] + dv[0], c[1] + dv[1]];
+      if (wg[n + '']) assert.deepStrictEqual(p2.to, n); else { assert.strictEqual(p2.to, null, 'blocked step from ' + k + ' to ' + n); assert.deepStrictEqual(p2.at, c); bumps++; }
+    });
+  });
+  // coins: on legal cells, the same every time, and still there (same cells) when the party grows or ranks and states change
+  var cs = A.coins('walk' + ws, wd, wa), ckeys = cs.map(String);
+  assert.deepStrictEqual(A.coins('walk' + ws, wd, wa), cs, 'coins are deterministic');
+  assert.strictEqual(Object.keys(ckeys.reduce(function (m, k) { m[k] = 1; return m; }, {})).length, cs.length, 'no two coins on one cell');
+  cs.forEach(function (c) {
+    assert(wg[c + ''] && seen[c + ''], 'seed ' + ws + ': coin ' + c + ' is on reachable ground');
+    assert(wd.tiles[c[1] - wd.oy][c[0] - wd.ox] !== D.T.DOOR, 'no coin on a door');
+    wa.forEach(function (a) { assert(!(a.x === c[0] && a.y === c[1]), 'no coin on a home cell'); });
+  });
+  var flip = party.map(function (n, i) { return i ? Object.assign({}, n, { running: !n.running, rank: n.kind === 'wf' ? null : ['boss', 'elite', null][(i + ws) % 3] }) : n; });
+  var fa = A.place('walk' + ws, D.generate('walk' + ws, flip), flip), fg = A.ground(wd, fa);
+  assert.deepStrictEqual(A.coins('walk' + ws, wd, fa), cs, 'coins do not move when ranks or states change');
+  cs.forEach(function (c) { assert(fg[c + ''], 'seed ' + ws + ': coin ' + c + ' stays on the ground whatever the enemy grows to'); });
+  var more = party.concat([{ id: 'late', parent: 'main', tier: 'executor', running: true, flags: [] }]), md = D.generate('walk' + ws, more), mc = A.coins('walk' + ws, md, A.place('walk' + ws, md, more)).map(String);
+  ckeys.forEach(function (k) { assert(mc.indexOf(k) >= 0, 'seed ' + ws + ': a later room moves no coin'); });
+  coinsAll += cs.length;
+  // the map changed under the player: snap() puts it back on the nearest ground cell
+  Object.keys(fl).slice(0, 40).forEach(function (k) { assert.deepStrictEqual(A.snap(wg, k.split(',').map(Number)), k.split(',').map(Number), 'a ground cell snaps to itself'); });
+  wa.forEach(function (a) { if (a.kind !== 'hero') return; var sn = A.snap(wg, [a.ex, a.ey]); assert(sn && wg[sn + ''] && Math.max(Math.abs(sn[0] - a.ex), Math.abs(sn[1] - a.ey)) <= a.fk + 2, 'out of an enemy box to ground close by'); });
+  assert.strictEqual(A.snap({}, [0, 0]), null);
+  // busy(): a resting hero's cell and the cell it is stepping to
+  var bz = A.busy(wa.map(function (a) { return a.kind === 'hero' && a.state === 'win' ? Object.assign({}, a, { walk: { at: [a.x, a.y], path: [[a.x, a.y + 1]] } }) : a; }));
+  wa.forEach(function (a) { assert.strictEqual(!!bz[a.x + ',' + a.y], a.kind === 'hero' && a.state === 'win'); if (a.kind === 'hero' && a.state === 'win') assert(bz[a.x + ',' + (a.y + 1)]); });
+}
+assert(moved > 20000 && bumps > 2000 && coinsAll > 100 && inside > rooms * 0.9, 'the walk really walked: ' + moved + ' moves, ' + bumps + ' bumps, ' + coinsAll + ' coins');
+// leaving walk mode: the way home from anywhere on the ground is a walk over ground cells only
+var hg = A.ground(d, acts), far = Object.keys(reach(hg, [by.main.x, by.main.y])).pop().split(',').map(Number), back = A.route(hg, far, [by.main.x, by.main.y]);
+assert(back.length && back.every(function (c) { return hg[c + '']; }) && back[back.length - 1] + '' === by.main.x + ',' + by.main.y);
+console.log('ok (walk mode: ' + steps + ' steps, ' + moved + ' moves, ' + bumps + ' bumps, ' + inside + ' of ' + rooms + ' rooms walked into, ' + coinsAll + ' coins)');

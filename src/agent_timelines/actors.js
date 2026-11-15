@@ -8,6 +8,8 @@
  * A ranked hero (node.rank, from the builder: "elite" costs at least half the boss, "boss" is the costliest of a party of 3+) fights a bigger
  * enemy: an elite's is 2x, the boss is a 3x red dragon wearing a crown, and its room's light turns red while it fights (Dungeon.glow). Rank is
  * drawing only: it changes no room, door or free cell the layout or the hero's home depends on, because cost grows while a session runs.
+ * Walk mode: the player steers the guild master (steer, ground, busy, snap), pose() says where a resting actor is and that it casts only
+ * while it stands still, coins() scatters what there is to pick up. All of it is canvas-free.
  * Node fields are the viewer's: {id, parent, cont, tier, kind, running, flags, rank, wf:{state}}. Plain ES5; window.Actors / module.exports. */
 (function (root) {
   'use strict';
@@ -60,6 +62,11 @@
     return s[2] * 12 + s[1];
   }
 
+  // Top left cell of a k-cell-wide enemy for a hero at `a` in room q: on the hero's row, right of the hero, pulled back inside the room if it would stick out.
+  function foeBox(q, a, k) {
+    return k > 1 ? [Math.max(q.x, Math.min(a[0] + 1, q.x + q.w - k)), Math.max(q.y, Math.min(a[1] + 1 - k, q.y + q.h - k))] : [a[0] + 1, a[1]];
+  }
+
   function place(seed, d, nodes) {
     var solid = {}, path = {}, rooms = {}, out = [], home = {};
     d.deco.forEach(function (e) { solid[e.x + ',' + e.y] = 1; });
@@ -89,10 +96,7 @@
       }
       a = near(q, q.cx - 1, q.cy, true); home[n.id] = a;
       var src = home[n.cont] || home[n.parent] || home.main; // where its walk in starts
-      var k = n.rank === 'boss' ? 3 : n.rank === 'elite' ? 2 : 1, ex = a[0] + 1, ey = a[1], box = {}, i, j;
-      if (k > 1) { // the enemy's box stands on the hero's row, right of the hero, and is pulled back inside the room if it would stick out
-        ex = Math.max(q.x, Math.min(ex, q.x + q.w - k)); ey = Math.max(q.y, Math.min(a[1] + 1 - k, q.y + q.h - k));
-      }
+      var k = n.rank === 'boss' ? 3 : n.rank === 'elite' ? 2 : 1, e = foeBox(q, a, k), ex = e[0], ey = e[1], box = {}, i, j;
       for (i = 0; i < k; i++) for (j = 0; j < k; j++) box[(ex + i) + ',' + (ey + j)] = 1;
       out.push({ id: n.id, kind: 'hero', idx: sprite(n), x: a[0], y: a[1], state: n.running ? 'fight' : 'win',
         foe: n.rank === 'boss' ? BOSS : FOES[D.prng(seed + '/foe/' + n.id)() * FOES.length | 0], fx: a[0] + 1, fy: a[1], free: room(q, box),
@@ -133,14 +137,100 @@
   }
 
   // The cells a new hero walks from a.from to its home: over any floor, corridor or door, round solid props.
-  function trip(d, a) {
+  function floor(d) { // every cell feet can stand on: room floor, corridor or door, minus solid props
     var free = {}, solid = {};
     d.deco.forEach(function (e) { if (e.solid) solid[e.x + ',' + e.y] = 1; });
     d.tiles.forEach(function (row, y) { row.forEach(function (t, x) {
       var k = (x + d.ox) + ',' + (y + d.oy);
       if (D.T.WALK.indexOf(t) >= 0 && !solid[k]) free[k] = 1;
     }); });
-    return route(free, a.from, [a.x, a.y]);
+    return free;
+  }
+  function trip(d, a) { return route(floor(d), a.from, [a.x, a.y]); }
+
+  // ---- walk mode: the player steers the guild master through the dungeon, one cell at a time (no diagonals, so no corner is ever cut).
+  // ground(): where the player may stand. floor() minus every enemy (standing or fallen, its whole box), every workflow chest and
+  // the cell of a hero that is fighting (it does not leave it). Changes only when place() output does.
+  function ground(d, actors) {
+    var g = floor(d), i, j;
+    actors.forEach(function (a) {
+      if (a.kind === 'wf' || a.kind === 'hero' && a.state === 'fight') delete g[a.x + ',' + a.y];
+      if (a.kind === 'hero') for (i = 0; i < a.fk; i++) for (j = 0; j < a.fk; j++) delete g[(a.ex + i) + ',' + (a.ey + j)];
+    });
+    return g;
+  }
+  // The cells resting heroes stand on or are stepping to right now: the player may not step onto them either.
+  // shortcut: a wandering hero does not look for the player, so it can still walk onto the player's cell; give walk() the player's cell if that shows.
+  function busy(actors) {
+    var b = {};
+    actors.forEach(function (a) {
+      if (a.kind !== 'hero' || a.state !== 'win') return;
+      var w = a.walk || {};
+      b[(w.at || [a.x, a.y]) + ''] = 1;
+      if (w.path && w.path[0]) b[w.path[0] + ''] = 1;
+    });
+    return b;
+  }
+  // pl = {at: [x, y], to: the cell being stepped to or null, t0: when that step began, face}. dir = [dx, dy] of the held key, or null.
+  // ok(key) says whether a cell may be entered. One call moves at most one cell, so a late frame never runs the player through a wall of time.
+  function steer(pl, ok, dir, now) {
+    if (pl.to && now - pl.t0 >= STEP_MS) { pl.at = pl.to; pl.to = null; pl.t0 += STEP_MS; }
+    if (pl.to || !dir || Math.abs(dir[0]) + Math.abs(dir[1]) !== 1) return pl; // one cell, never a diagonal
+    if (dir[0]) pl.face = dir[0];
+    var n = [pl.at[0] + dir[0], pl.at[1] + dir[1]];
+    if (ok(n + '')) { pl.to = n; if (!(now - pl.t0 < STEP_MS / 2)) pl.t0 = now; } // a held key carries the step boundary over, so the pace stays even
+    return pl;
+  }
+  // Nearest cell of g to c (rings outward), for when the map changed under the player; null when g has none within 40 cells.
+  function snap(g, c) {
+    for (var r = 0; r < 40; r++) for (var dy = -r; dy <= r; dy++) for (var dx = -r; dx <= r; dx++)
+      if (Math.max(Math.abs(dx), Math.abs(dy)) === r && g[(c[0] + dx) + ',' + (c[1] + dy)]) return [c[0] + dx, c[1] + dy];
+    return null;
+  }
+  // Where an actor that is not fighting is at `now`, in fractional cells, and whether it casts: only while it stands still.
+  // a.pl (set by the viewer in walk mode) is the player's guild master; still = reduced motion, no tween.
+  function pose(a, now, still) {
+    var p = a.pl, f, o;
+    if (p) { f = p.to && !still ? Math.max(0, Math.min(1, (now - p.t0) / STEP_MS)) : 0;
+      o = { x: p.at[0] + (p.to ? (p.to[0] - p.at[0]) * f : 0), y: p.at[1] + (p.to ? (p.to[1] - p.at[1]) * f : 0), moving: !!p.to, face: p.face || 1 }; }
+    else o = still ? { x: a.x, y: a.y, moving: false, face: 1 } : walk(a, now);
+    o.cast = a.state === 'cast' && !o.moving;
+    return o;
+  }
+  // The room a cell belongs to: its floor, or a door that opens into it (an enemy can stand right behind its door, so the door has to count as
+  // a visit). null in a corridor.
+  function roomOf(d, c) {
+    function at(x, y) { return d.rooms.filter(function (q) { return x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h; })[0]; }
+    var q = at(c[0], c[1]), i;
+    if (!q && (d.tiles[c[1] - d.oy] || [])[c[0] - d.ox] === D.T.DOOR) for (i = 0; i < 4 && !q; i++) q = at(c[0] + [1, -1, 0, 0][i], c[1] + [0, 0, 1, -1][i]);
+    return q || null;
+  }
+  // Coins to pick up: up to two per agent room and one in about half the corridors, the same every time for a session and never moved by a
+  // later room. A room's coins lie where the player can get to from the room's own door whatever happens later: off props, the hero's cell
+  // and every size its enemy can grow to (rank follows cost). A room whose door is shut off that way has none.
+  function coins(seed, d, actors) {
+    var g = floor(d), out = [], by = {}, inRoom = {}, x, y;
+    actors.forEach(function (a) { by[a.id] = a; });
+    d.rooms.forEach(function (q) { for (y = q.y; y < q.y + q.h; y++) for (x = q.x; x < q.x + q.w; x++) inRoom[x + ',' + y] = 1; });
+    d.rooms.forEach(function (q) {
+      var a = by[q.id], ok = {}, c = [], todo = [], r = D.prng(seed + '/coin/' + q.id), k, i, j, e, n;
+      var way = d.paths.filter(function (p) { return p.to === q.id; })[0];
+      if (q.hall || !a || !way) return;
+      for (y = q.y; y < q.y + q.h; y++) for (x = q.x; x < q.x + q.w; x++) if (g[x + ',' + y]) ok[x + ',' + y] = 1;
+      delete ok[a.x + ',' + a.y];
+      if (a.kind === 'hero') for (k = 1; k <= 3; k++) { e = foeBox(q, [a.x, a.y], k); for (i = 0; i < k; i++) for (j = 0; j < k; j++) delete ok[(e[0] + i) + ',' + (e[1] + j)]; }
+      way.cells.forEach(function (w) { todo.push(w); });
+      while (todo.length) for (e = todo.shift(), i = 0; i < 4; i++) { // flood in from the corridor, in a fixed order
+        n = [e[0] + [1, -1, 0, 0][i], e[1] + [0, 0, 1, -1][i]];
+        if (ok[n + '']) { delete ok[n + '']; c.push(n); todo.push(n); }
+      }
+      for (n = r() < 0.5 ? 2 : 1; n-- && c.length;) out.push(c.splice(r() * c.length | 0, 1)[0]);
+    });
+    d.paths.forEach(function (p) {
+      var c = p.cells.filter(function (c) { return g[c + ''] && !inRoom[c + ''] && d.tiles[c[1] - d.oy][c[0] - d.ox] !== D.T.DOOR; });
+      if (c.length > 2 && D.prng(seed + '/coin/path/' + p.to)() < 0.5) out.push(c[c.length >> 1]);
+    });
+    return out;
   }
 
   // Position of a resting actor at `now`, in fractional cells: run to a random free cell, pause 1-3 s, repeat.
@@ -206,6 +296,13 @@
     function dot(color, x, y, n) { ctx.fillStyle = color; ctx.fillRect(Math.round(x / p) * p, Math.round(y / p) * p, (n || 1) * p, (n || 1) * p); }
     function step(period, n, off) { return still ? 0 : Math.floor((now + off) % period / period * n); }
 
+    (d.coins || []).forEach(function (c, j) { // walk mode only (the viewer sets d.coins to the ones not picked up yet): one coin turning on its edge,
+      var X = (c[0] - d.ox) * S, Y = (c[1] - d.oy) * S, w = [6, 4, 2, 4][step(800, 4, j * 130)], x = X + (8 - w / 2) * p; // so it is not taken for a room's own coin pile
+      function R(col, x, y, w, h) { ctx.fillStyle = col; ctx.fillRect(x, y, w * p, h * p); }
+      R('rgba(20,10,24,.4)', X + 5 * p, Y + 13 * p, 6, 1);
+      R('#7a4a10', x, Y + 5 * p, w, 6); if (w > 2) { R('#7a4a10', x + p, Y + 4 * p, w - 2, 8); R('#ffd23f', x + p, Y + 5 * p, w - 2, 6); R('#fff3b0', x + p, Y + 5 * p, 1, 3); }
+      else R('#ffd23f', x, Y + 5 * p, 2, 6);
+    });
     actors.forEach(function (a) {
       var X = (a.x - d.ox) * S, Y = (a.y - d.oy) * S, off = D.prng('t/' + a.id)() * 5000 | 0, k;
       if (a.kind === 'gm') return rest(a, a.idx); // always roams the hall; casts at each stop while work is going on
@@ -260,10 +357,10 @@
     });
     // Not working: wander (hop while running, face the way it runs); while paused, bob and now and then cheer.
     function rest(a, idx) {
-      var o = still ? { x: a.x, y: a.y, moving: false, face: 1 } : walk(a, now), off = D.prng('t/' + a.id)() * 5000 | 0;
+      var o = pose(a, now, still), off = D.prng('t/' + a.id)() * 5000 | 0;
       var X = Math.round((o.x - d.ox) * 16) * p, Y = Math.round((o.y - d.oy) * 16) * p;
       if (o.moving) return spr(idx, X, Y - step(220, 2, off) * p, { flip: o.face < 0 });
-      if (a.state === 'cast') return cast(idx, X, Y, o.face, off);
+      if (o.cast) return cast(idx, X, Y, o.face, off);
       var k = step(4000, 10, off);
       spr(idx, X, Y - (k === 0 && a.kind === 'hero' ? 3 : step(1600, 2, off)) * p, { flip: o.face < 0 });
       if (k === 0 && a.kind === 'hero') { dot('#ffd23f', X + 2 * p, Y - 2 * p); dot('#fff3b0', X + 13 * p, Y - p); }
@@ -285,7 +382,7 @@
     }
   }
 
-  var Actors = { place: place, stamp: stamp, draw: draw, walk: walk, trip: trip, sprite: sprite, HERO: HERO, FOES: FOES, BOSS: BOSS, DRAGON: DRAGON, DRAGON_PAL: DRAGON_PAL, OPEN_CHEST: OPEN_CHEST };
+  var Actors = { place: place, stamp: stamp, draw: draw, walk: walk, trip: trip, route: route, ground: ground, busy: busy, steer: steer, snap: snap, pose: pose, coins: coins, roomOf: roomOf, STEP_MS: STEP_MS, sprite: sprite, HERO: HERO, FOES: FOES, BOSS: BOSS, DRAGON: DRAGON, DRAGON_PAL: DRAGON_PAL, OPEN_CHEST: OPEN_CHEST };
   if (typeof module !== 'undefined' && module.exports) module.exports = Actors;
   root.Actors = Actors;
 })(typeof window !== 'undefined' ? window : this);

@@ -178,7 +178,7 @@ body.lobby::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 <div class="stats" id="stats"></div><div id="meta" class="meta mut"></div><div id="badges" class="fl" role="group" aria-label="Achievements earned in this session" hidden></div><div id="xp" class="xp" title="Gold by model family"></div><div id="err" class="err" hidden></div>
 <details><summary>How to read the dungeon</summary><dl id="legend"></dl></details>
 <details><summary>Cost by model</summary><dl id="costs"></dl></details></header>
-<div class="wrap" id="main"><div id="graph" class="px" tabindex="0" aria-label="Party tree: the guild master on the left, the heroes they sent out to the right"></div><div id="mapbox" class="px" hidden><div class="mapbar"><button class="btn" id="zout" type="button" aria-label="Zoom out">−</button><span id="zl" class="mut">2X</span><button class="btn" id="zin" type="button" aria-label="Zoom in">+</button><button class="btn" id="rplay" type="button" aria-pressed="false">REPLAY</button><input id="rt" type="range" step="1" aria-label="Replay: the map at an earlier moment of the session"><span id="rl" class="mut">NOW</span><span class="mut">hover a room, click for details</span></div><div id="mapscroll"><canvas id="map" aria-label="Dungeon map: one room per agent; hover a room for its agent, click it for details"></canvas></div></div>
+<div class="wrap" id="main"><div id="graph" class="px" tabindex="0" aria-label="Party tree: the guild master on the left, the heroes they sent out to the right"></div><div id="mapbox" class="px" hidden><div class="mapbar"><button class="btn" id="zout" type="button" aria-label="Zoom out">−</button><span id="zl" class="mut">2X</span><button class="btn" id="zin" type="button" aria-label="Zoom in">+</button><button class="btn" id="rplay" type="button" aria-pressed="false">REPLAY</button><input id="rt" type="range" step="1" aria-label="Replay: the map at an earlier moment of the session"><span id="rl" class="mut">NOW</span><button class="btn" id="walk" type="button" aria-pressed="false" title="Walk the guild master through the dungeon yourself">WALK</button><span id="coins" class="mut" hidden></span><span id="mhint" class="mut">hover a room, click for details</span></div><div id="mapscroll"><canvas id="map" aria-label="Dungeon map: one room per agent; hover a room for its agent, click it for details"></canvas></div></div>
 <div id="gantt" class="px" hidden><div class="mapbar"><button class="btn" id="gout" type="button" aria-label="Zoom out">−</button><span id="gzl" class="mut">1X</span><button class="btn" id="gin" type="button" aria-label="Zoom in">+</button><button class="btn" id="gfit" type="button">FIT</button><span class="mut">click a bar for details</span></div><div id="gscroll"><div id="ginner"><div class="gaxis" id="gaxis" aria-hidden="true"></div><div id="grows" role="group" aria-label="Agents on a shared time axis"></div><div id="gcols" aria-hidden="true"></div></div></div></div>
 <aside id="side" class="px" aria-label="Quest log and party"><h2>QUEST LOG</h2><ol id="feed"></ol><details><summary>Whole party</summary><ol id="list"></ol></details></aside></div>
 <div id="tip" class="px" role="tooltip" hidden></div><div id="toast" class="px" role="status" aria-live="polite" hidden><span id="tt"></span><button class="btn" id="tx" type="button" aria-label="Dismiss">×</button></div><aside id="panel" class="px" role="dialog" aria-label="Hero details" hidden><button id="px" type="button" aria-label="Close">×</button><div id="pb"></div></aside>
@@ -477,7 +477,7 @@ document.addEventListener("mouseout",function(e){if(e.target.closest&&e.target.c
 document.addEventListener("focusout",function(){$("tip").hidden=true});
 document.addEventListener("click",function(e){if(e.target.closest&&e.target.closest(".q"))e.stopPropagation()},true);  /* a ? inside a card shows help, not the panel */
 /* ---- map view: the same session as a dungeon (dungeon.js lays out rooms, actors.js draws the characters) */
-var VIEW=["map","time"].indexOf(lsGet("tlView"))>=0?lsGet("tlView"):"chart",GZ=[1,2,4,8],gz=0,RMQ=matchMedia("(prefers-reduced-motion: reduce)").matches,SHEETS={td:new Image(),ob:new Image()},M={scale:2,mem:{},shape:"",sid:null,raf:0};
+var VIEW=["map","time"].indexOf(lsGet("tlView"))>=0?lsGet("tlView"):"chart",GZ=[1,2,4,8],gz=0,RMQ=matchMedia("(prefers-reduced-motion: reduce)").matches,SHEETS={td:new Image(),ob:new Image()},M={scale:2,mem:{},shape:"",sid:null,raf:0,walk:false,held:[]};
 SHEETS.td.src="tiny-dungeon.png";SHEETS.ob.src="one-bit.png";
 /* replay: M.t = a moment of the session (null = now). Only the map follows it. Agents are sorted by start, so the ones
    already spawned at M.t are a prefix of the list and the dungeon is the same one, just smaller. */
@@ -532,11 +532,46 @@ if(c){sc.scrollLeft=c[0]*cv.width-sc.clientWidth/2;sc.scrollTop=c[1]*cv.height-s
 else if(old&&oldS===s){sc.scrollLeft+=(old.ox-d.ox)*16*s;sc.scrollTop+=(old.oy-d.oy)*16*s}  /* the map grew up/left: keep the view still */
 else{var h=d.rooms[0];sc.scrollLeft=(h.cx-d.ox)*16*s-sc.clientWidth/2;sc.scrollTop=(h.cy-d.oy)*16*s-sc.clientHeight/2}  /* first look: the guild hall */
 M.d=d;M.bs=s}
-M.acts=Actors.place(cur.id,M.d,nodes);M.shape=key}
-Actors.stamp(M.acts,M.mem,now);
+M.acts=Actors.place(cur.id,M.d,nodes);M.ground=Actors.ground(M.d,M.acts);M.coins=Actors.coins(cur.id,M.d,M.acts);M.shape=key}
+Actors.stamp(M.acts,M.mem,now);walkStep(M.acts[0],now,sc,s);
 var ctx=cv.getContext("2d");ctx.imageSmoothingEnabled=false;ctx.drawImage(M.bg,0,0);Actors.draw(ctx,M.d,M.acts,SHEETS,s,now,RMQ);Dungeon.glow(ctx,M.d,s,now,RMQ,M.acts);if(!RMQ)Dungeon.reveal(ctx,M.d,s,now,M.acts);
-if(sel){var a=M.acts.filter(function(x){return x.id===sel})[0];if(a){var w=a.walk&&a.walk.at||[a.x,a.y];  /* gold frame on the selected hero */
+if(sel){var a=M.acts.filter(function(x){return x.id===sel})[0];if(a){var w=a.pl?a.pl.at:a.walk&&a.walk.at||[a.x,a.y];  /* gold frame on the selected hero */
 ctx.strokeStyle="#ffd23f";ctx.lineWidth=s;ctx.strokeRect((w[0]-M.d.ox)*16*s-s,(w[1]-M.d.oy)*16*s-s,16*s+2*s,16*s+2*s)}}}
+/* ---- walk mode: the player steers the guild master (Actors.steer over Actors.ground: walls, props, enemies, chests and fighting heroes block).
+   Entering a room, or reaching its door, opens that agent's panel; leaving closes it. Coins are for fun only: kept in this browser, worth no XP. */
+var DIR={ArrowLeft:[-1,0],a:[-1,0],ArrowRight:[1,0],d:[1,0],ArrowUp:[0,-1],w:[0,-1],ArrowDown:[0,1],s:[0,1]};
+function coinsLoad(){try{var o=JSON.parse(lsGet("tlCoins"));return o&&typeof o==="object"?o:{}}catch(e){return {}}}
+function coinsSave(sid,took){var all=coinsLoad(),ks;delete all[sid];all[sid]=Object.keys(took);ks=Object.keys(all);ks.slice(0,Math.max(0,ks.length-30)).forEach(function(k){delete all[k]});lsSet(JSON.stringify(all),"tlCoins")}  /* the 30 sessions walked last */
+function walkStep(gm,now,sc,s){var d=M.d,pl=M.pl,g=M.ground;
+if(!gm||gm.kind!=="gm")return;
+if(!M.walk){gm.pl=null;d.coins=null;return}
+if(!pl||M.plSid!==cur.id){var w=gm.walk||{},took={};pl=M.pl={at:(w.at||[gm.x,gm.y]).slice(),to:null,t0:0,face:w.face||1};M.plSid=cur.id;M.room=null;
+(coinsLoad()[cur.id]||[]).forEach(function(k){took[k]=1});M.took=took}
+if(!g[pl.at+""]){pl.at=Actors.snap(g,pl.at)||[gm.x,gm.y];pl.to=null}  /* the map changed under the player (a replay seek, a hero that started fighting here) */
+if(pl.to&&!g[pl.to+""])pl.to=null;
+var bz=Actors.busy(M.acts),k=M.held[M.held.length-1];Actors.steer(pl,function(c){return !!g[c]&&!bz[c]},k?DIR[k]:M.tap,now);M.tap=null;gm.pl=pl;
+var at=pl.at+"",q=Actors.roomOf(d,pl.at),rid=q&&!q.hall&&by[q.id]?q.id:null,n=0;
+if(!M.took[at]&&M.coins.some(function(c){return c+""===at})){M.took[at]=1;coinsSave(cur.id,M.took)}
+d.coins=M.coins.filter(function(c){if(M.took[c+""])n++;return !M.took[c+""]});
+var txt="COINS "+n+"/"+M.coins.length;if(M.coinTxt!==txt){M.coinTxt=txt;$("coins").textContent=txt}
+if(rid!==M.room){M.room=rid;if(rid)openPanel(rid);else closePanel()}
+var o=Actors.pose(gm,now,RMQ),S=16*s,px=(o.x-d.ox+.5)*S,py=(o.y-d.oy+.5)*S,cw=sc.clientWidth,pw=$("panel").hidden?cw:$("panel").getBoundingClientRect().left-sc.getBoundingClientRect().left;
+if(pw>cw/3&&pw<cw)cw=pw;  /* the open panel covers the right of the map: keep the guild master left of it, unless it covers nearly all (a narrow screen) */
+var mx=Math.min(cw*.35,5*S),my=Math.min(sc.clientHeight*.35,4*S);  /* the view follows, with a margin */
+if(px<sc.scrollLeft+mx)sc.scrollLeft=px-mx;else if(px>sc.scrollLeft+cw-mx)sc.scrollLeft=px-cw+mx;
+if(py<sc.scrollTop+my)sc.scrollTop=py-my;else if(py>sc.scrollTop+sc.clientHeight-my)sc.scrollTop=py-sc.clientHeight+my}
+function setWalk(on){var gm=M.acts&&M.acts[0],pl=M.pl,w=gm&&gm.walk;M.walk=on;M.held=[];M.tap=null;
+$("walk").setAttribute("aria-pressed",String(on));$("coins").hidden=!on;$("mhint").textContent=on?"arrows or WASD to move, Esc to stop":"hover a room, click for details";
+if(on||!pl)return;
+if(w&&M.plSid===cur.id){var home=gm.free[pl.at+""];  /* back to roaming: from where it stands if that is in the hall, else it walks home first */
+w.at=pl.at.slice();w.path=home?[]:Actors.route(M.ground,pl.at,[gm.x,gm.y]);if(!home&&!w.path.length)w.at=[gm.x,gm.y];w.t0=w.until=performance.now();w.face=pl.face}
+M.pl=null;if(M.room){M.room=null;closePanel()}}
+function walkKey(e){var k=e.key.length===1?e.key.toLowerCase():e.key,t=e.target.tagName,i=M.held.indexOf(k);
+if(i>=0)M.held.splice(i,1);  /* a key let go always counts, whatever else is held by then */
+if(e.type==="keyup"||!M.walk||VIEW!=="map"||INDEX)return;
+if(k==="Escape"){setWalk(false);return}
+if(!DIR[k]||e.ctrlKey||e.metaKey||e.altKey||t==="INPUT"||t==="SELECT"||t==="TEXTAREA")return;
+e.preventDefault();M.held.push(k);M.tap=DIR[k]}  /* preventDefault: the arrows must not scroll the page; tap: a press shorter than a frame still moves one cell */
 function zoom(dz){var sc=$("mapscroll"),cv=$("map"),n=Math.max(1,Math.min(6,M.scale+dz));if(n===M.scale)return;
 M.center=[(sc.scrollLeft+sc.clientWidth/2)/(cv.width||1),(sc.scrollTop+sc.clientHeight/2)/(cv.height||1)];M.scale=n;$("zl").textContent=n+"X"}
 /* the whole room (floor and the wall face above it) stands for its agent: hover names it, click opens it */
@@ -553,6 +588,7 @@ $("gin").addEventListener("click",function(){gzoom(1)});$("gout").addEventListen
 $("grows").addEventListener("click",function(e){var r=e.target.closest(".grow");if(r)openPanel(r.dataset.id)});
 $("rt").addEventListener("input",function(){setPlay(false);M.mem={};seek(+this.value>=+this.max?null:+this.value)});
 $("rplay").addEventListener("click",function(){if(!cur||cur.t0==null)return;if(!M.play&&M.t==null)seek(span(cur)[0]);setPlay(!M.play)});
+$("walk").addEventListener("click",function(){setWalk(!M.walk)});document.addEventListener("keydown",walkKey);document.addEventListener("keyup",walkKey);addEventListener("blur",function(){M.held=[]});
 $("zin").addEventListener("click",function(){zoom(1)});$("zout").addEventListener("click",function(){zoom(-1)});
 setView(VIEW);
 if(INDEX){$("lq").value=LQ;
