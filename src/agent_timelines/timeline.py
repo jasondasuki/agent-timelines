@@ -371,7 +371,7 @@ def load(path, now=None, closed=(), ended=False, event=None):
     errors, now = [], now or time.time()
     sid = os.path.basename(path)[:-6]
     base = os.path.join(os.path.dirname(path), sid)
-    main = scan(read_jsonl(path, errors))
+    main = scan(read_jsonl(path, errors) if os.path.exists(path) else [])  # the first hook event can come before the transcript is on disk
     owner, inputs, agents = dict.fromkeys(main["spawns"], "main"), dict(main["spawns"]), []
     sub = os.path.join(base, "subagents")  # a Workflow's agents live in subagents/workflows/<runId>/
     for mp in sorted(glob.glob(os.path.join(sub, "agent-*.meta.json")) + glob.glob(os.path.join(sub, "workflows", "wf_*", "agent-*.meta.json"))):
@@ -462,7 +462,8 @@ def load(path, now=None, closed=(), ended=False, event=None):
                              key=lambda x: (-x["usd"], x["model"]))}
     mage = now - os.path.getmtime(path) if os.path.exists(path) else 0
     mrun = not ended and event != "Stop" and (event == "UserPromptSubmit" or (not main["final"] and mage < STALE))
-    activity = max([main["t1"] or 0] + [a["end"] or 0 for a in nodes])  # running nodes end at now
+    # running nodes end at now; so does a running main session, or one whose first line is not on disk yet would read as ended long ago
+    activity = max([main["t1"] or 0] + [a["end"] or 0 for a in nodes] + ([now] if mrun else []))
     for a in agents:
         a["flags"] = [f for f in a["flags"] if RULES.get("ctx" if f.startswith("ctx-") else f, True)]
         for k in [k for k in a if k[0] == "_"]:
@@ -537,12 +538,16 @@ def build_index(out_dir=None, now=None):
             os.replace(dst + ".%d.tmp" % os.getpid(), dst)
 
 
+PURGE_RE = re.compile(r"(?:\.(.+)\.(?:lock|recheck)|(.+)\.(?:data|prompts)\.js|([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.(?:html|json))$")
+
+
 def purge(out_dir, keep, now=None):
-    """Delete session files untouched for RETAIN_DAYS (also legacy <sid>.html/.json); never session `keep` or the shared files."""
+    """Delete session files untouched for RETAIN_DAYS: <sid>.data.js, <sid>.prompts.js, the build's .<sid>.lock/.recheck, and legacy
+    <uuid>.html/.json. Never session `keep` or the shared files, and no other file: out_dir may be a folder that holds more than ours."""
     now = now or time.time()
-    for p in glob.glob(os.path.join(out_dir, "*")):
-        b = os.path.basename(p)
-        if b.split(".")[0] in ("index", "latest", "viewer", keep) or not re.search(r"\.(data\.js|prompts\.js|html|json)$", b):
+    for p in glob.glob(os.path.join(out_dir, "*")) + glob.glob(os.path.join(out_dir, ".*")):
+        m = PURGE_RE.match(os.path.basename(p))
+        if not m or (m.group(1) or m.group(2) or m.group(3)) in ("index", "achievements", keep):
             continue
         try:
             if now - os.path.getmtime(p) > RETAIN_DAYS * 86400:

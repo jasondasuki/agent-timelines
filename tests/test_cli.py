@@ -21,6 +21,35 @@ def test_install_uninstall():
     assert s["model"] == "opus" and s["hooks"] == {"Stop": [{"hooks": [other]}]}, s
 
 
+def test_install_keeps_symlink_and_mode():
+    """A settings.json that is a symlink (a profile sharing another's settings) stays one; the file it points at gets the hooks and keeps its mode."""
+    d = tempfile.mkdtemp()
+    real, link = os.path.join(d, "real.json"), os.path.join(d, "settings.json")
+    json.dump({"model": "opus"}, open(real, "w"))
+    os.chmod(real, 0o644)
+    os.symlink(real, link)
+    cli.main(["install", "--settings", link])
+    assert os.path.islink(link) and cli.MARK in open(real).read() and os.stat(real).st_mode & 0o777 == 0o644, oct(os.stat(real).st_mode)
+    cli.main(["uninstall", "--settings", link])
+    assert os.path.islink(link) and json.load(open(real)) == {"model": "opus"}
+
+
+def test_build_before_transcript_and_lock_place():
+    """The first hook event of a session can come before its transcript is on disk: the build still writes a page.
+    Its lock sits in the output folder, not in the shared temp dir."""
+    from agent_timelines import timeline as tl
+    d = tempfile.mkdtemp()
+    keep = tl.OUT_DIR
+    try:
+        tl.OUT_DIR = os.path.join(d, "out")
+        cli.build(argparse.Namespace(transcript=os.path.join(d, "nope", "early1.jsonl"), event="UserPromptSubmit", closed="", recheck=0))
+        s = tl.read_data(os.path.join(tl.OUT_DIR, "early1.data.js"))
+        assert s["id"] == "early1" and s["prun"] and s["agents"] == [] and s["status"] == "live" and s["updated"] == s["now"], s  # live: the page keeps polling
+        assert os.path.exists(os.path.join(tl.OUT_DIR, ".early1.lock")) and not os.path.exists(os.path.join(tempfile.gettempdir(), "agent-timeline-early1.lock"))
+    finally:
+        tl.OUT_DIR = keep
+
+
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 
@@ -150,6 +179,8 @@ def test_serve_refuses_cross_site():
 
 if __name__ == "__main__":
     test_install_uninstall()
+    test_install_keeps_symlink_and_mode()
+    test_build_before_transcript_and_lock_place()
     test_plugin_files()
     test_hook_via_plugin()
     test_build_keeps_both_closed_ids()

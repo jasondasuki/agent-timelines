@@ -130,12 +130,14 @@ def test_tree_flags_running_and_files():
     assert r1["heroes"] == 6 and r1["running"] == 2 and r1["issues"] == want == 13 and r1["gold"] == sum(s["models"].values()) and len(r1["party"]) == 6, r1
     assert r1["party"][3] == ["executor", None, True, False] and r1["last"] == s["events"][-1]["text"]
     assert "prompt" not in json.dumps(rows) and "reply" not in json.dumps(rows) and "<\\/" not in json.dumps(rows), "lobby rows carry no prompt or reply text"
-    for f in ("old.data.js", "ancient.html", "gone.prompts.js"):
+    foreign = ("my-notes.json", "report.html", "latest.html", "other.lock")  # out_dir may be a shared folder: purge deletes only what is ours
+    for f in ("old.data.js", "0a1b2c3d-0000-4000-8000-00000000abcd.html", "0a1b2c3d-0000-4000-8000-00000000abcd.json", "gone.prompts.js", ".old.lock", ".old.recheck") + foreign:
         open(os.path.join(od, f), "w").write("x")
         os.utime(os.path.join(od, f), (1, 1))
+    os.utime(os.path.join(od, ".achievements.lock"), (1, 1))
     os.utime(os.path.join(od, "liveB.data.js"), (1, 1))
     tl.purge(od, "liveB", now)
-    assert sorted(os.listdir(od)) == sorted(tl.ASSETS + (".achievements.lock", "achievements.js", "bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "sess1.prompts.js", "staleC.data.js", "oldD.data.js"))
+    assert sorted(os.listdir(od)) == sorted(tl.ASSETS + foreign + (".achievements.lock", "achievements.js", "bad.data.js", "endA.data.js", "index.data.js", "index.html", "liveB.data.js", "sess1.data.js", "sess1.prompts.js", "staleC.data.js", "oldD.data.js"))
     # SubagentHandback ends an agent; a later assistant line resumes it; SubagentStop/Start keep the closed list
     hb = [use("g1", "Read", {}, 10), use("hb1", "SubagentHandback", {"message": "x"}, 20),
           {"type": "user", "timestamp": T(21), "message": {"content": [{"type": "tool_result", "tool_use_id": "hb1", "content": "Report delivered."}]}}]
