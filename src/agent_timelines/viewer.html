@@ -570,7 +570,7 @@ function walkKey(e){var k=e.key.length===1?e.key.toLowerCase():e.key,t=e.target.
 if(i>=0)M.held.splice(i,1);  /* a key let go always counts, whatever else is held by then */
 if(e.type==="keyup"||!M.walk||VIEW!=="map"||INDEX)return;
 if(k==="Escape"){setWalk(false);return}
-if(!DIR[k]||e.ctrlKey||e.metaKey||e.altKey||t==="INPUT"||t==="SELECT"||t==="TEXTAREA")return;
+if(!DIR[k]||e.ctrlKey||e.metaKey||e.altKey||t==="INPUT"&&e.target.type!=="range"||t==="SELECT"||t==="TEXTAREA")return;
 e.preventDefault();M.held.push(k);M.tap=DIR[k]}  /* preventDefault: the arrows must not scroll the page; tap: a press shorter than a frame still moves one cell */
 function zoom(dz){var sc=$("mapscroll"),cv=$("map"),n=Math.max(1,Math.min(6,M.scale+dz));if(n===M.scale)return;
 M.center=[(sc.scrollLeft+sc.clientWidth/2)/(cv.width||1),(sc.scrollTop+sc.clientHeight/2)/(cv.height||1)];M.scale=n;$("zl").textContent=n+"X"}
