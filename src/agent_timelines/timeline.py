@@ -8,6 +8,7 @@ PROJECTS = os.path.join(CLAUDE_DIR, "projects")
 OUT_DIR = os.path.join(CLAUDE_DIR, "agent-timelines")
 AGENTS_DIR = os.path.join(CLAUDE_DIR, "agents")  # <type>.md frontmatter model:/effort: pin an agent type
 HANDOVER_DIR = os.path.join(CLAUDE_DIR, "handovers")  # <date>-<agent_id>.md handoff files
+OMP_DIR = os.path.expanduser("~/.omp")  # oh-my-pi: sessions in agent/sessions/ and profiles/<name>/agent/sessions/
 DENY = "Main session does not execute"  # text of a guard hook that blocks the main session from doing work itself
 TIERS = {"Explore": "scanner", "Plan": "plan", "writer": "writer", "runner": "runner", "general-purpose": "executor"}
 CTX_LIMIT = 200000  # one turn's context (input + cache read + cache write) worth flagging
@@ -52,7 +53,7 @@ STALE = 600  # s: an unfinished agent whose transcript is idle this long is dead
 LIVE_AGE = 3600  # s: a session with no activity this long is ended
 ASSETS = ("tiny-dungeon.png", "one-bit.png", "PressStart2P-Regular.ttf", "dungeon.js", "actors.js", "lobby.js", "gantt.js", "sky.js", "trophy.js")  # sprites + font (assets/LICENSES.txt) + view scripts
 CONFIG = os.path.expanduser(os.environ.get("AGENT_TIMELINES_CONFIG") or "~/.config/agent-timelines/config.json")
-KEYS = {"out_dir": "OUT_DIR", "agents_dir": "AGENTS_DIR", "handover_dir": "HANDOVER_DIR", "tiers": "TIERS", "guard_text": "DENY",
+KEYS = {"out_dir": "OUT_DIR", "agents_dir": "AGENTS_DIR", "handover_dir": "HANDOVER_DIR", "omp_dir": "OMP_DIR", "tiers": "TIERS", "guard_text": "DENY",
         "ctx_limit": "CTX_LIMIT", "tool_limit": "TOOL_LIMIT", "brief_limit": "BRIEF_LIMIT", "retain_days": "RETAIN_DAYS", "lobby_limit": "LOBBY_LIMIT",
         "rules": "RULES", "prices": "PRICES"}
 
@@ -205,7 +206,7 @@ def scan(lines):
     """Facts common to main and subagent transcripts."""
     r = {"t0": None, "t1": None, "tools": 0, "spawns": {}, "tok": {}, "peak": 0, "models": {}, "efforts": {}, "last_text": "",
          "denials": [], "refused": [], "cwd": None, "final": False, "limit_hits": [], "wf": [], "by_model": {}, "usd": 0.0, "unpriced": set(),
-         "tool_names": {}, "reply": ""}
+         "tool_names": {}, "reply": "", "closed": set()}
     seen, usage, hb, wfu = set(), {}, set(), {}  # hb: SubagentHandback tool_use ids; wfu: Workflow tool_use id -> launch time
     for d in lines:
         t = ts(d.get("timestamp"))
@@ -269,19 +270,102 @@ def scan(lines):
                         br = BRIEF_RE.search(s)
                         if br:
                             r["refused"].append((t, int(br.group(1))))
-    for fam, c, m, c1, fast in usage.values():
+    return tally(r, usage)
+
+
+def tally(r, usage):
+    """Add usage {key: (family, counts, model, 1-hour cache writes, fast[, usd the harness reported])} to r's tokens and cost.
+    A PRICES entry wins; without one the harness's own figure (omp records one) counts, else the model is unpriced."""
+    for fam, c, m, c1, fast, *own in usage.values():
         add_tok(r["tok"].setdefault(fam, dict.fromkeys(WEIGHTS, 0)), c)
         r["peak"] = max(r["peak"], c["in"] + c["cc"] + c["cr"])
         bm, p = r["by_model"].setdefault(m, dict.fromkeys(WEIGHTS, 0)), price_of(m)
         add_tok(bm, c)
         bm.setdefault("usd", 0.0)
-        if p:
-            x = usd_of(p, c, min(c1, c["cc"]), fast)
+        x = usd_of(p, c, min(c1, c["cc"]), fast) if p else own[0] if own and own[0] else None
+        if x is not None:
             bm["usd"] += x
             r["usd"] += x
         elif any(c.values()):
             r["unpriced"].add(m)
     return r
+
+
+def is_omp(lines):
+    """An omp (oh-my-pi) transcript opens with a title and/or a versioned session line; a Claude Code one never has a "session" line."""
+    return any(d.get("type") == "session" and "version" in d for d in lines[:3])
+
+
+def scan_omp(lines):
+    """scan() for an omp transcript: "message" entries (roles user / assistant / toolResult), toolCall blocks, `task` spawns keyed
+    by the agent name (its transcript is <session dir>/<name>.jsonl), effort from thinking_level_change, and the agents an
+    async-result reported finished in r["closed"]."""
+    r = scan([])
+    seen, usage, effort = set(), {}, None
+    for d in lines:
+        t = ts(d.get("timestamp"))
+        if t is not None:
+            r["t0"] = t if r["t0"] is None else min(r["t0"], t)
+            r["t1"] = t if r["t1"] is None else max(r["t1"], t)
+        r["cwd"] = r["cwd"] or d.get("cwd")
+        typ = d.get("type")
+        if typ == "thinking_level_change":
+            effort = d.get("thinkingLevel") or effort
+        elif typ == "custom" and d.get("customType") == "session_exit":
+            r["final"] = True
+        elif typ == "custom_message" and d.get("customType") == "async-result":
+            for j in (d.get("details") or {}).get("jobs") or []:
+                if isinstance(j, dict) and j.get("agentId") and j.get("status") != "running":
+                    r["closed"].add(str(j["agentId"]))
+        msg = d.get("message") if typ == "message" and isinstance(d.get("message"), dict) else {}
+        role, content = msg.get("role"), msg.get("content")
+        if role in ("user", "assistant", "toolResult"):
+            r["final"] = role == "assistant" and msg.get("stopReason") not in (None, "toolUse")
+        u = msg.get("usage") if role == "assistant" else d.get("usage") if typ == "model_usage" else None  # model_usage: titles, probes
+        m = msg.get("model") if role == "assistant" else d.get("model")
+        if isinstance(u, dict):
+            cost = u.get("cost") if isinstance(u.get("cost"), dict) else {}
+            usage[d.get("id") or len(usage)] = (family(m), {k: u.get(f) or 0 for k, f in (("in", "input"), ("cc", "cacheWrite"), ("cr", "cacheRead"), ("out", "output"))},
+                                                m or "?", 0, False, cost.get("total") or 0)
+        if role != "assistant":
+            continue
+        if m:
+            r["models"][m] = r["models"].get(m, 0) + 1
+            if effort:
+                r["efforts"][effort] = r["efforts"].get(effort, 0) + 1
+        for b in content if isinstance(content, list) else []:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "toolCall" and b.get("id") not in seen:
+                seen.add(b.get("id"))
+                r["tools"] += 1
+                nm = b.get("name") or "?"
+                r["tool_names"][nm] = r["tool_names"].get(nm, 0) + 1
+                args = b.get("arguments") if isinstance(b.get("arguments"), dict) else {}
+                for x in args.get("tasks") or [] if nm == "task" else []:
+                    if isinstance(x, dict) and x.get("name"):
+                        r["spawns"][str(x["name"])] = {"subagent_type": x.get("agent") or "task", "model": x.get("model"),
+                                                       "prompt": text_of(x.get("task")), "description": str(x["name"])}
+            elif b.get("type") == "text" and (b.get("text") or "").strip():
+                r["last_text"] = b["text"]
+    return tally(r, usage)
+
+
+def omp_agents(path, base, now, errors):
+    """omp subagents: every <base>/**/<name>.jsonl whose session line names a parentSession (the main transcript or another agent's).
+    Other .jsonl files there (tool logs) have none and are skipped. Returns load()'s agent tuples; m["parent"] is the owner id."""
+    out = []
+    for tp in sorted(glob.glob(os.path.join(glob.escape(base), "**", "*.jsonl"), recursive=True)):
+        lines = read_jsonl(tp, errors)
+        ps = next((d.get("parentSession") for d in lines[:3] if d.get("type") == "session"), None)
+        if not ps:
+            continue
+        aid = os.path.basename(tp)[:-6]
+        first = next((text_of(d["message"].get("content")) for d in lines if d.get("type") == "message" and isinstance(d.get("message"), dict)
+                      and d["message"].get("role") == "user"), "")
+        parent = "main" if os.path.realpath(ps) == os.path.realpath(path) else os.path.basename(ps)[:-6]
+        out.append((aid, {"toolUseId": aid, "parent": parent}, scan_omp(lines), first, None, now - os.path.getmtime(tp)))
+    return out
 
 
 def tools_by(counts):
@@ -371,10 +455,21 @@ def load(path, now=None, closed=(), ended=False, event=None):
     errors, now = [], now or time.time()
     sid = os.path.basename(path)[:-6]
     base = os.path.join(os.path.dirname(path), sid)
-    main = scan(read_jsonl(path, errors) if os.path.exists(path) else [])  # the first hook event can come before the transcript is on disk
+    lines = read_jsonl(path, errors) if os.path.exists(path) else []  # the first hook event can come before the transcript is on disk
+    omp = is_omp(lines)
+    main = (scan_omp if omp else scan)(lines)
     owner, inputs, agents = dict.fromkeys(main["spawns"], "main"), dict(main["spawns"]), []
     sub = os.path.join(base, "subagents")  # a Workflow's agents live in subagents/workflows/<runId>/
-    for mp in sorted(glob.glob(os.path.join(sub, "agent-*.meta.json")) + glob.glob(os.path.join(sub, "workflows", "wf_*", "agent-*.meta.json"))):
+    if omp:
+        agents = omp_agents(path, base, now, errors)
+        closed = set(closed) | main["closed"]
+        for aid, m, s, _, _, _ in agents:
+            owner[aid] = m["parent"]
+            inputs.update(s["spawns"])
+            closed |= s["closed"]
+        for aid, m, _, _, _, _ in agents:  # an agent started outside a task call (an eval script) has no spawn record: its file name names it
+            m.update(agentType=inputs.get(aid, {}).get("subagent_type") or "task", description=aid)
+    for mp in [] if omp else sorted(glob.glob(os.path.join(sub, "agent-*.meta.json")) + glob.glob(os.path.join(sub, "workflows", "wf_*", "agent-*.meta.json"))):
         aid = os.path.basename(mp)[6:-10]
         try:
             with open(mp) as f:
@@ -763,5 +858,17 @@ def publish(d, out_dir=None, closed=(), now=None):
 
 
 def find(prefix=None):
-    files = glob.glob(os.path.join(PROJECTS, "*", (prefix or "") + "*.jsonl"))
+    """Main transcripts, newest first: Claude Code's projects/<dir>/<sid>.jsonl and omp's [profiles/<name>/]agent/sessions/<dir>/<sid>.jsonl."""
+    pat = (prefix or "") + "*.jsonl"
+    files = glob.glob(os.path.join(PROJECTS, "*", pat)) + glob.glob(os.path.join(OMP_DIR, "agent", "sessions", "*", pat)) + glob.glob(
+        os.path.join(OMP_DIR, "profiles", "*", "agent", "sessions", "*", pat))
     return sorted(files, key=os.path.getmtime, reverse=True)
+
+
+def root_of(path):
+    """The main transcript of a transcript path: Claude Code keeps agents in <sid>/subagents/, omp in <sid>/ next to <sid>.jsonl."""
+    if "/subagents/" in path:
+        return path.split("/subagents/")[0] + ".jsonl"
+    while os.path.exists(os.path.dirname(path) + ".jsonl"):
+        path = os.path.dirname(path) + ".jsonl"
+    return path

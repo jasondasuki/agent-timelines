@@ -55,10 +55,51 @@ def install(a):
         for ev, matcher in EVENTS.items():
             hooks.setdefault(ev, []).append(dict({"matcher": matcher} if matcher else {}, hooks=[{"type": "command", "command": cmd}]))
     print("installed %d hooks in %s\nfill the lobby with past sessions: agent-timelines rebuild\nopen the dashboard: agent-timelines serve\n(using the Claude Code plugin instead? then skip this command)" % (len(EVENTS), edit_settings(a.settings, edit)))
+    for d in omp_hook_dirs():
+        os.makedirs(d, exist_ok=True)
+        tl.write_atomic(os.path.join(d, OMP_HOOK), OMP_HOOK_TS % json.dumps(sys.executable))
+        print("installed the omp hook in", d)
 
 
 def uninstall(a):
     print("removed agent-timelines hooks from", edit_settings(a.settings, strip))
+    for d in omp_hook_dirs():
+        if os.path.exists(os.path.join(d, OMP_HOOK)):
+            os.remove(os.path.join(d, OMP_HOOK))
+            print("removed the omp hook from", d)
+
+
+# omp (oh-my-pi) loads TypeScript hook modules from <agent dir>/hooks/post/; one per agent dir (the default and each profile)
+OMP_HOOK = "agent-timelines.ts"
+OMP_HOOK_TS = """// %s: rebuilds this omp session's agent-timelines data (written by `agent-timelines install`, removed by `uninstall`)
+import { spawn } from "node:child_process";
+
+const PY = %%s;
+const last = new Map<string, number>();
+
+export default function (pi: any) {
+\tconst build = (ctx: any, ev: string) => {
+\t\tconst f = ctx?.sessionManager?.getSessionFile?.();
+\t\tif (!f) return;
+\t\tconst now = Date.now();
+\t\tif (ev === "PostToolUse" && now - (last.get(f) ?? 0) < %d) return; // shortcut: the last tool of a burst may be skipped; agent_end catches up
+\t\tlast.set(f, now);
+\t\ttry {
+\t\t\tspawn(PY, ["-m", "agent_timelines", "build", f, "--event", ev], { detached: true, stdio: "ignore" }).unref();
+\t\t} catch {}
+\t};
+\tpi.on("agent_start", (_e: any, ctx: any) => build(ctx, "UserPromptSubmit"));
+\tpi.on("tool_result", (_e: any, ctx: any) => build(ctx, "PostToolUse"));
+\tpi.on("agent_end", (_e: any, ctx: any) => build(ctx, "Stop"));
+\tpi.on("session_shutdown", (_e: any, ctx: any) => build(ctx, "SessionEnd"));
+}
+""" % (MARK, THROTTLE * 1000)
+
+
+def omp_hook_dirs():
+    """The hooks/post folder of every omp agent dir on this machine; none when omp is not installed."""
+    return [os.path.join(d, "hooks", "post") for d in [os.path.join(tl.OMP_DIR, "agent")] + glob.glob(os.path.join(tl.OMP_DIR, "profiles", "*", "agent"))
+            if os.path.isdir(d)]
 
 
 def plugin_duplicate():
@@ -86,7 +127,9 @@ def hook(a):
 
 
 def build(a):
-    tp = a.transcript.split("/subagents/")[0] + ".jsonl" if "/subagents/" in a.transcript else a.transcript  # subagent events may name their own file
+    tp = tl.root_of(a.transcript)  # subagent events may name their own file
+    if a.event and "/subagents/" not in a.transcript and tp != a.transcript:
+        a.event = None  # an omp subagent's own agent_end / shutdown says nothing about the main session
     sid = os.path.basename(tp)[:-6]
     # one build per session at a time: two agents stopping together would each rewrite the closed list without the other's id
     # the lock and the recheck mark live in OUT_DIR (ours, and purge removes old ones), not in a temp dir other users can write to

@@ -70,6 +70,11 @@ If `agent-timelines install` hooks are also in settings.json, the plugin's hooks
 
 Start or continue a Claude Code session; it appears in the lobby on its first hook event.
 
+**omp (oh-my-pi)**: `agent-timelines install` also writes a hook module to `hooks/post/agent-timelines.ts` in every omp agent dir it finds
+(`~/.omp/agent` and `~/.omp/profiles/*/agent`; set `omp_dir` in the config for another root), and `rebuild` / `open` read omp sessions too.
+`task` agents become heroes, nested by `parentSession`. Cost uses your `prices` table when a model is in it, otherwise the cost omp recorded.
+omp loads hooks at start, so restart a running omp session to get live updates.
+
 | Command | What it does |
 |---|---|
 | `install [--settings PATH]` | Add the hooks (replaces earlier agent-timelines hooks, keeps all others). |
