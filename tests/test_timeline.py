@@ -552,7 +552,43 @@ def test_save_file_corrupt_and_files():
     assert {"t%d" % i for i in range(8)} <= set(keep(path)["sessions"]), sorted(keep(path)["sessions"])
 
 
+def test_omp():
+    """An omp transcript: task spawns by name, agents in <sid>/<name>.jsonl (nested via parentSession), omp's own cost, root_of, find."""
+    d = setup()
+    tl.OMP_DIR = os.path.join(d, "omp")
+    sd = os.path.join(tl.OMP_DIR, "profiles", "p", "agent", "sessions", "--w--")
+    os.makedirs(os.path.join(sd, "s1"))
+    p = os.path.join(sd, "s1.jsonl")
+    ses = lambda parent=None: dict({"type": "session", "version": 3, "id": "x", "timestamp": T(0), "cwd": "/w"}, **({"parentSession": parent} if parent else {}))
+    msg = lambda sec, role, content, **k: {"type": "message", "id": "m%d%s" % (sec, role), "timestamp": T(sec), "message": dict({"role": role, "content": content}, **k)}
+    usage = {"input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0, "cost": {"total": 0.25}}
+    call = lambda sec, i, name, args, model="litellm/gpt-x": msg(sec, "assistant", [{"type": "toolCall", "id": i, "name": name, "arguments": args}],
+                                                                   stopReason="toolUse", model=model, usage=usage)
+    done = lambda sec, text: msg(sec, "assistant", [{"type": "text", "text": text}], stopReason="stop", model="litellm/gpt-x", usage=usage)
+    wr(p, [{"type": "title", "v": 1, "title": "t"}, ses(), {"type": "thinking_level_change", "id": "e", "timestamp": T(0), "thinkingLevel": "high"},
+           msg(1, "user", [{"type": "text", "text": "go"}]),
+           call(2, "c1", "task", {"tasks": [{"name": "Scout1", "agent": "scout", "model": "gpt-x", "task": "look"}]}),
+           {"type": "model_usage", "id": "mu", "timestamp": T(3), "model": "claude-opus-5", "usage": dict(usage, input=1000000, output=0)},
+           {"type": "custom_message", "customType": "async-result", "timestamp": T(50), "details": {"jobs": [{"agentId": "Scout1", "status": "completed"}]}},
+           call(51, "c2", "read", {"path": "x"})])
+    wr(os.path.join(sd, "s1", "Scout1.jsonl"), [ses(p), msg(5, "user", [{"type": "text", "text": "look"}]),
+                                               call(6, "c3", "task", {"tasks": [{"name": "Deep", "task": "dig"}]}), call(7, "c4", "grep", {})])
+    wr(os.path.join(sd, "s1", "Deep.jsonl"), [ses(os.path.join(sd, "s1", "Scout1.jsonl")), done(9, "found it")])
+    wr(os.path.join(sd, "s1", "changes.jsonl"), [{"type": "call", "agent": "Main"}])  # a tool log, not an agent
+    r = tl.load(p, now=tl.ts(T(60)))
+    a = by(r)
+    assert set(a) == {"Scout1", "Deep"}, a
+    assert a["Scout1"]["parent"] == "main" and a["Deep"]["parent"] == "Scout1" and a["Scout1"]["type"] == "scout" and a["Deep"]["type"] == "task"
+    assert a["Scout1"]["req"] == "gpt-x/-" and a["Scout1"]["ran"] == "gpt-x/-" and a["Scout1"]["prompt"] == "look" and a["Deep"]["reply"] == "found it"
+    assert not a["Scout1"]["running"] and not a["Deep"]["running"] and r["prun"]  # Scout1 closed by the async result; main mid tool loop
+    assert r["planner"] == "gpt-x/high" and r["tools"] == 2 and r["cwd"] == "/w" and r["errors"] == []
+    # omp's cost per message, except the model_usage line whose model has a PRICES entry (1M input of opus-5 = $5)
+    assert abs(r["cost"]["total"] - (0.25 * 2 + 5 + 0.25 * 3)) < 1e-9 and r["cost"]["unpriced"] == [], r["cost"]
+    assert tl.root_of(os.path.join(sd, "s1", "Deep.jsonl")) == p and tl.root_of(p) == p
+    assert tl.find("s1") == [p]
+
+
 if __name__ == "__main__":
-    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running, test_lobby_limit, test_cost, test_rules_and_config, test_rank, test_achievement_rules, test_save_file, test_save_file_corrupt_and_files):
+    for t in (test_tree_flags_running_and_files, test_limits_tokens_tiers, test_workflows_and_main_running, test_lobby_limit, test_cost, test_rules_and_config, test_rank, test_achievement_rules, test_save_file, test_save_file_corrupt_and_files, test_omp):
         t()
     print("ok")

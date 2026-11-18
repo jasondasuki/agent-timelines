@@ -2,6 +2,8 @@
 import argparse, http.client, io, json, os, re, sys, tempfile, threading, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from agent_timelines import cli
+cli.tl.OMP_DIR = tempfile.mkdtemp()  # never your real ~/.omp: install writes hooks there and find() lists its sessions
+os.makedirs(os.path.join(cli.tl.OMP_DIR, "profiles", "p1", "agent"))
 
 
 def test_install_uninstall():
@@ -16,7 +18,10 @@ def test_install_uninstall():
     cmds = [x["command"] for ev in h.values() for g in ev for x in g["hooks"]]
     assert sum(cli.MARK in c for c in cmds) == len(cli.EVENTS) and "echo keep" in cmds and not any(cli.OLD in c for c in cmds), cmds
     assert any(g.get("matcher") == "*" for g in h["PostToolUse"])
+    hk = os.path.join(cli.tl.OMP_DIR, "profiles", "p1", "agent", "hooks", "post", cli.OMP_HOOK)
+    assert cli.MARK in open(hk).read() and json.dumps(sys.executable) in open(hk).read() and cli.omp_hook_dirs() == [os.path.dirname(hk)]
     cli.main(["uninstall", "--settings", p])
+    assert not os.path.exists(hk)
     s = json.load(open(p))
     assert s["model"] == "opus" and s["hooks"] == {"Stop": [{"hooks": [other]}]}, s
 
